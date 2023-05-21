@@ -20,32 +20,31 @@ chatbot = Chatbot(api_key=api_key, system_prompt=system_prompt)
 while True:
     try:
         prompt = input(colored("ChatGPT: ", "green"))
-        # print(f"=== Prompt\n{prompt}")
-
         response = chatbot.ask(prompt)
         print(colored(f"=== Response\n{response}", "yellow"))
 
         while "CMD: " in response:
-            command = response[5:]
 
+            command = response[5:]
             print(colored(f"=== Command\n{command}", "blue"))
-            run_command = input(colored(f"Do you want to run the command? (y/N): ", "green"))
+            run_command = input(
+                colored(f"Do you want to run the command? (y/N): ", "green"))
+            
             if run_command.lower() == "y":
                 process = subprocess.Popen(
                     command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 output, errors = process.communicate()
                 exit_code = process.wait()
 
-                print(colored(f"=== Command output\n{output.decode()}", "magenta"))
-                
+                print(
+                    colored(f"=== Command output\n{output.decode()}", "magenta"))
                 prompt = f"Analyze command output:\n{output.decode()}"
-                # print(f"=== Prompt\n{prompt}")
-
                 response = chatbot.ask(prompt)
-                print(colored(f"=== Response for output\n{response}", "yellow"))
+                print(
+                    colored(f"=== Response for output\n{response}", "yellow"))
             else:
                 break
-            
+
     except subprocess.CalledProcessError as e:
         print(colored(
             f"Error: Command failed with exit code {e.returncode}: {e.output}", "red"))
