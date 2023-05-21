@@ -27,17 +27,21 @@ while True:
         while "CMD: " in response:
             command = response[5:]
 
-            print(f"=== Run command\n{command}")
-            process = subprocess.Popen(
-                command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            output, errors = process.communicate()
-            exit_code = process.wait()
+            run_command = input(f"Do you want to run the command '{command}'? (y/N): ")
+            if run_command.lower() == "y":
+                # print(f"=== Run command\n{command}")
+                process = subprocess.Popen(
+                    command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                output, errors = process.communicate()
+                exit_code = process.wait()
 
-            prompt = f"Analyze command output:\n{output.decode()}"
-            print(f"=== Prompt\n{prompt}")
+                prompt = f"Analyze command output:\n{output.decode()}"
+                print(f"=== Prompt\n{prompt}")
 
-            response = chatbot.ask(prompt)
-            print(f"=== Response\n{response}")
+                response = chatbot.ask(prompt)
+                print(f"=== Response\n{response}")
+            else:
+                break
             
     except subprocess.CalledProcessError as e:
         print(
