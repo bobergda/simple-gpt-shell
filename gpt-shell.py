@@ -19,7 +19,7 @@ chatbot = Chatbot(api_key=api_key, system_prompt=system_prompt)
 while True:
     try:
         prompt = input("ChatGPT: ")
-        print(f"=== Prompt\n{prompt}")
+        # print(f"=== Prompt\n{prompt}")
 
         response = chatbot.ask(prompt)
         print(f"=== Response\n{response}")
@@ -27,19 +27,21 @@ while True:
         while "CMD: " in response:
             command = response[5:]
 
-            run_command = input(f"Do you want to run the command '{command}'? (y/N): ")
+            print(f"=== Command\n{command}")
+            run_command = input(f"Do you want to run the command? (y/N): ")
             if run_command.lower() == "y":
-                # print(f"=== Run command\n{command}")
                 process = subprocess.Popen(
                     command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 output, errors = process.communicate()
                 exit_code = process.wait()
 
+                print(f"=== Command output\n{output.decode()}")
+                
                 prompt = f"Analyze command output:\n{output.decode()}"
-                print(f"=== Prompt\n{prompt}")
+                # print(f"=== Prompt\n{prompt}")
 
                 response = chatbot.ask(prompt)
-                print(f"=== Response\n{response}")
+                print(f"=== Response for output\n{response}")
             else:
                 break
             
