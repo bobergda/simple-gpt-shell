@@ -26,7 +26,7 @@ while True:
         while "CMD: " in response:
             commands = [line.replace("CMD: ", "") for line in response.splitlines() if line.startswith("CMD: ")]
             command = "; ".join(commands)
-            if command is None:
+            if command == "":
                 break
 
             print(colored(f"=== Command\n{command}", "blue"))

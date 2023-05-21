@@ -2,6 +2,7 @@
 
 The `gpt-shell.py` script is a command-line interface for interacting with the OpenAI GPT-3 API. It allows the user to input commands and receive a response from the GPT-3 model with a suggested command to execute. The script uses the `revChatGPT.V3` module to interface with the GPT-3 API and requires an API key to be set as an environment variable. The script is designed to be run in a terminal and provides a system prompt for the user to input commands.
 
+![Screen 1](screen1.png "Screen 1")
 ## Installation
 
 1. Clone the repository to your local machine.
