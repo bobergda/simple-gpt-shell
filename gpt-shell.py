@@ -12,7 +12,7 @@ Before command add "CMD: ".
 
 api_key = os.getenv("OPENAI_API_KEY", "")
 if api_key == "":
-    print("Error: OPENAI_API_KEY is not set")
+    print(colored("Error: OPENAI_API_KEY is not set", "red"))
     exit(1)
 
 chatbot = Chatbot(api_key=api_key, system_prompt=system_prompt)
@@ -24,20 +24,31 @@ while True:
         print(colored(f"=== Response\n{response}", "yellow"))
 
         while "CMD: " in response:
-            command = response.replace("CMD: ", "")
+            commands = [line.replace("CMD: ", "") for line in response.splitlines() if line.startswith("CMD: ")]
+            command = "; ".join(commands)
+            if command is None:
+                break
+
             print(colored(f"=== Command\n{command}", "blue"))
             run_command = input(
                 colored(f"Do you want to run the command? (y/N): ", "green"))
-            
+
             if run_command.lower() == "y":
                 process = subprocess.Popen(
                     command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 output, errors = process.communicate()
                 exit_code = process.wait()
 
-                print(
-                    colored(f"=== Command output\n{output.decode()}", "magenta"))
-                prompt = f"Analyze command output:\n{output.decode()}"
+                if exit_code != 0:
+                    print(colored(
+                        f"Error: Command failed with exit code {exit_code}: {errors.decode()}"
+                        + (f"{output.decode()}" if output else ""), "red"))
+                    prompt = f"Analyze command error:\n{errors.decode()}\n{output.decode()}"
+                else:
+                    print(
+                        colored(f"=== Command output\n{output.decode()}", "magenta"))
+                    prompt = f"Analyze command output:\n{output.decode()}"
+
                 response = chatbot.ask(prompt)
                 print(
                     colored(f"=== Response for output\n{response}", "yellow"))
