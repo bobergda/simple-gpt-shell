@@ -24,7 +24,8 @@ while True:
         print(colored(f"=== Response\n{response}", "yellow"))
 
         while "CMD: " in response:
-            commands = [line.replace("CMD: ", "") for line in response.splitlines() if line.startswith("CMD: ")]
+            commands = [line.replace(
+                "CMD: ", "") for line in response.splitlines() if line.startswith("CMD: ")]
             command = "; ".join(commands)
             if command == "":
                 break
@@ -41,7 +42,7 @@ while True:
 
                 if exit_code != 0:
                     print(colored(
-                        f"Error: Command failed with exit code {exit_code}: {errors.decode()}"
+                        f"=== Error: Command failed - exit({exit_code}):\n{errors.decode()}"
                         + (f"{output.decode()}" if output else ""), "red"))
                     prompt = f"Analyze command error:\n{errors.decode()}\n{output.decode()}"
                 else:
@@ -50,8 +51,12 @@ while True:
                     prompt = f"Analyze command output:\n{output.decode()}"
 
                 response = chatbot.ask(prompt)
-                print(
-                    colored(f"=== Response for output\n{response}", "yellow"))
+                if exit_code != 0:
+                    print(
+                        colored(f"=== Response for error\n{response}", "yellow"))
+                else:
+                    print(
+                        colored(f"=== Response for output\n{response}", "yellow"))
             else:
                 break
 
