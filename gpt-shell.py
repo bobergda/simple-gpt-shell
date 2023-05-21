@@ -24,8 +24,7 @@ while True:
         print(colored(f"=== Response\n{response}", "yellow"))
 
         while "CMD: " in response:
-
-            command = response[5:]
+            command = response.replace("CMD: ", "")
             print(colored(f"=== Command\n{command}", "blue"))
             run_command = input(
                 colored(f"Do you want to run the command? (y/N): ", "green"))
