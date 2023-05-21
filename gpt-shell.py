@@ -1,6 +1,7 @@
 import os
 import subprocess
 from revChatGPT.V3 import Chatbot
+from termcolor import colored
 
 system_prompt = """Provide only bash commands for Linux without any description.
 If there is a lack of details, provide most logical solution.
@@ -18,41 +19,41 @@ chatbot = Chatbot(api_key=api_key, system_prompt=system_prompt)
 
 while True:
     try:
-        prompt = input("ChatGPT: ")
+        prompt = input(colored("ChatGPT: ", "green"))
         # print(f"=== Prompt\n{prompt}")
 
         response = chatbot.ask(prompt)
-        print(f"=== Response\n{response}")
+        print(colored(f"=== Response\n{response}", "yellow"))
 
         while "CMD: " in response:
             command = response[5:]
 
-            print(f"=== Command\n{command}")
-            run_command = input(f"Do you want to run the command? (y/N): ")
+            print(colored(f"=== Command\n{command}", "blue"))
+            run_command = input(colored(f"Do you want to run the command? (y/N): ", "green"))
             if run_command.lower() == "y":
                 process = subprocess.Popen(
                     command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 output, errors = process.communicate()
                 exit_code = process.wait()
 
-                print(f"=== Command output\n{output.decode()}")
+                print(colored(f"=== Command output\n{output.decode()}", "magenta"))
                 
                 prompt = f"Analyze command output:\n{output.decode()}"
                 # print(f"=== Prompt\n{prompt}")
 
                 response = chatbot.ask(prompt)
-                print(f"=== Response for output\n{response}")
+                print(colored(f"=== Response for output\n{response}", "yellow"))
             else:
                 break
             
     except subprocess.CalledProcessError as e:
-        print(
-            f"Error: Command failed with exit code {e.returncode}: {e.output}")
+        print(colored(
+            f"Error: Command failed with exit code {e.returncode}: {e.output}", "red"))
     except KeyboardInterrupt:
-        print("Exiting...")
+        print(colored("Exiting...", "yellow"))
         exit(0)
     except EOFError:
-        print("Exiting...")
+        print(colored("Exiting...", "yellow"))
         exit(0)
     except Exception as e:
-        print(f"Error of type {type(e).__name__}: {e}")
+        print(colored(f"Error of type {type(e).__name__}: {e}", "red"))
