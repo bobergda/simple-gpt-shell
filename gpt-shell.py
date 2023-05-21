@@ -24,7 +24,7 @@ while True:
         response = chatbot.ask(prompt)
         print(f"=== Response\n{response}")
 
-        if response.startswith("CMD: "):
+        while "CMD: " in response:
             command = response[5:]
 
             print(f"=== Run command\n{command}")
@@ -33,13 +33,12 @@ while True:
             output, errors = process.communicate()
             exit_code = process.wait()
 
-            prompt = f"Analize command output:\n{output.decode()}"
+            prompt = f"Analyze command output:\n{output.decode()}"
             print(f"=== Prompt\n{prompt}")
 
             response = chatbot.ask(prompt)
             print(f"=== Response\n{response}")
-        else:
-            print("Error: Command not found")
+            
     except subprocess.CalledProcessError as e:
         print(
             f"Error: Command failed with exit code {e.returncode}: {e.output}")
