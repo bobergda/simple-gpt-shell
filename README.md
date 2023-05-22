@@ -1,8 +1,7 @@
-# simple-gpt-shell
+# Simple GPT Shell
 
-The `gpt-shell.py` script is a command-line interface for interacting with the OpenAI GPT-3 API. It allows the user to input commands and receive a response from the GPT-3 model with a suggested command to execute. The script uses the `revChatGPT.V3` module to interface with the GPT-3 API and requires an API key to be set as an environment variable. The script is designed to be run in a terminal and provides a system prompt for the user to input commands.
+The `gpt-shell.py` script is a Python command-line interface that uses OpenAI's GPT-3 API to provide suggested commands for Linux shell commands. The script prompts the user to input a command and then provides a suggested command to execute based on the input. The script uses the `revChatGPT.V3` module to interface with the GPT-3 API and requires an API key to be set as an environment variable. The script is designed to be run in a terminal and provides a system prompt for the user to input commands. If the suggested command requires multiple steps, the script will attempt to combine them together. The output of the command is analyzed by the GPT-3 model to provide a suggested command.
 
-![Screen 1](screen1.png "Screen 1")
 ## Installation
 
 1. Clone the repository to your local machine.
@@ -16,4 +15,10 @@ The `gpt-shell.py` script is a command-line interface for interacting with the O
 3. Follow the system prompt to input commands.
 4. The script will provide a suggested command to execute based on the input.
 
-The `simple-gpt-shell` project is designed to provide a simple way to interact with the OpenAI GPT-3 API using a command-line interface. The script is designed to be easy to use and requires minimal setup. The project is intended for developers who want to experiment with the GPT-3 API and explore its capabilities. The project is open source and contributions are welcome.
+## Contributing
+
+Contributions are welcome! If you find a bug or have an idea for a new feature, please open an issue or submit a pull request.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
