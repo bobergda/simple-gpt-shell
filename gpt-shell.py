@@ -2,6 +2,8 @@ import os
 import subprocess
 from revChatGPT.V3 import Chatbot
 from termcolor import colored
+import platform
+import distro
 
 
 def get_api_key():
@@ -10,14 +12,6 @@ def get_api_key():
         print(colored("Error: OPENAI_API_KEY is not set", "red"))
         exit(1)
     return api_key
-
-
-def trim_prompt(prompt, max_length):
-    num_tokens = len(prompt.split())
-    if num_tokens > max_length:
-        print(colored("Input prompt is too long, truncating...", "yellow"))
-        prompt = " ".join(prompt.split()[:max_length])
-    return prompt
 
 
 def execute_command(command):
@@ -56,30 +50,38 @@ def interpret_command(chatbot, user_prompt):
             colored(f"Do you want to run the command? (y/N): ", "green"))
 
         if run_confirmation.lower() == "y":
-            user_prompt = execute_command(commands_summary)
+            command_output = execute_command(commands_summary)
 
-            chatbot_reply = chatbot.ask(user_prompt)
+            chatbot_reply = chatbot.ask(command_output)
             print(colored(f"=== Response\n{chatbot_reply}", "yellow"))
         else:
             break
 
 
+def get_os_and_shell_names():
+    os_name = platform.system()
+    shell_name = os.path.basename(os.environ.get("SHELL", "bash"))
+    if os_name == "Linux":
+        os_name += " " + distro.name(pretty=True)
+    return os_name, shell_name
+
+
 def main():
-    chatbot_prompt = """Provide bash commands for Linux.
+    os_name, shell_name = get_os_and_shell_names()
+
+    chatbot_prompt = f"""Provide {shell_name} commands for {os_name}.
 If there is a lack of details, provide the most logical solution.
 Ensure the output is a valid shell command.
 If multiple steps required try to combine them together.
 """
-# Before command add "CMD: ".
-
+    print(colored(f"=== ChatGPT\n{chatbot_prompt}", "yellow"))
     api_key = get_api_key()
-    chatbot_instance = Chatbot(api_key=api_key, system_prompt=chatbot_prompt,
-                               max_tokens=1024, truncate_limit=1024)
+    chatbot_instance = Chatbot(
+        api_key=api_key, system_prompt=chatbot_prompt, truncate_limit=1024)
 
     while True:
         try:
             user_input = input(colored("ChatGPT: ", "green"))
-            # user_input = trim_prompt(user_input, max_tokens=2048)
             interpret_command(chatbot_instance, user_input)
         except subprocess.CalledProcessError as e:
             print(colored(
