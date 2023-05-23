@@ -70,9 +70,9 @@ def main():
     os_name, shell_name = get_os_and_shell_names()
 
     chatbot_prompt = f"""Provide {shell_name} commands for {os_name}.
-If there is a lack of details, provide the most logical solution.
-Ensure the output is a valid shell command.
-If multiple steps required try to combine them together.
+If details are missing, suggest the most logical solution.
+Ensure valid shell command output.
+For multiple steps, combine them if possible.
 """
     print(colored(f"=== ChatGPT\n{chatbot_prompt}", "yellow"))
     api_key = get_api_key()
