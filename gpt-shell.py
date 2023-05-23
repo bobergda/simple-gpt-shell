@@ -21,14 +21,14 @@ def execute_command(command):
     exit_status = command_process.wait()
 
     print(
-        colored(f"=== Command output - exit({exit_status})\n{command_output.decode()}", "magenta"))
+        colored(f"=== Command output - exit({exit_status})\n{command_output.decode().rstrip()}", "magenta"))
     if command_errors.decode() != "":
         print(
-            colored(f"{command_errors.decode()}", "red"))
+            colored(f"{command_errors.decode().rstrip()}", "red"))
 
-    prompt = f"Analyze command output\n{command_output.decode()}"
+    prompt = f"Analyze command output\n{command_output.decode().rstrip()}"
     if command_errors.decode() != "":
-        prompt += f"\nstderr:\n{command_errors.decode()}"
+        prompt += f"\nstderr:\n{command_errors.decode().rstrip()}"
 
     return prompt
 
@@ -74,7 +74,7 @@ If details are missing, suggest the most logical solution.
 Ensure valid shell command output.
 For multiple steps, combine them if possible.
 """
-    print(colored(f"=== ChatGPT\n{chatbot_prompt}", "yellow"))
+    print(colored(f"=== ChatGPT system_prompt\n{chatbot_prompt}", "yellow"))
     api_key = get_api_key()
     chatbot_instance = Chatbot(
         api_key=api_key, system_prompt=chatbot_prompt, truncate_limit=1024)
