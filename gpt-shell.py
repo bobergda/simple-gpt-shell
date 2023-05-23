@@ -20,15 +20,23 @@ def execute_command(command):
     command_output, command_errors = command_process.communicate()
     exit_status = command_process.wait()
 
-    print(
-        colored(f"=== Command output - exit({exit_status})\n{command_output.decode().rstrip()}", "magenta"))
-    if command_errors.decode() != "":
-        print(
-            colored(f"{command_errors.decode().rstrip()}", "red"))
+    output_str = command_output.decode()
+    if output_str.endswith('\n'):
+        output_str = output_str[:-1]
 
-    prompt = f"Analyze command output\n{command_output.decode().rstrip()}"
-    if command_errors.decode() != "":
-        prompt += f"\nstderr:\n{command_errors.decode().rstrip()}"
+    error_str = command_errors.decode()
+    if error_str.endswith('\n'):
+        error_str = error_str[:-1]
+
+    print(
+        colored(f"=== Command output - exit({exit_status})\n{output_str}", "magenta"))
+    if error_str != "":
+        print(
+            colored(f"{error_str}", "red"))
+
+    prompt = f"Analyze command output\n{output_str}"
+    if error_str != "":
+        prompt += f"\nstderr:\n{error_str}"
 
     return prompt
 
