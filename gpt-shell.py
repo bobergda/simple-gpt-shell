@@ -39,41 +39,42 @@ def run_command(command):
     return prompt
 
 
-def analyze_command(chatbot, command):
-    response = chatbot.ask(command)
-    print(colored(f"=== Response\n{response}", "yellow"))
+def analyze_command(chatbot, input_prompt):
+    chatbot_response = chatbot.ask(input_prompt)
+    print(colored(f"=== Response\n{chatbot_response}", "yellow"))
 
-    while "CMD: " in response:
-        commands = [line.replace(
-            "CMD: ", "") for line in response.splitlines() if line.startswith("CMD: ")]
-        command = "; ".join(commands)
-        if command == "":
+    while "```" in chatbot_response:
+        split_response = chatbot_response.split('```')
+        extracted_commands = split_response[1::2]
+        commands_string = '\n'.join(command.strip()
+                                    for command in extracted_commands if command.strip() != "")
+        if commands_string == "":
             break
 
-        print(colored(f"=== Command\n{command}", "blue"))
-        run = input(
+        print(colored(f"=== Command\n{commands_string}", "blue"))
+        user_input = input(
             colored(f"Do you want to run the command? (y/N): ", "green"))
 
-        if run.lower() == "y":
-            prompt = run_command(command)
-            # prompt = truncate_prompt(prompt, max_tokens=1024)
+        if user_input.lower() == "y":
+            input_prompt = run_command(commands_string)
 
-            response = chatbot.ask(prompt)
-            print(colored(f"=== Response\n{response}", "yellow"))
+            chatbot_response = chatbot.ask(input_prompt)
+            print(colored(f"=== Response\n{chatbot_response}", "yellow"))
         else:
             break
 
 
 def main():
-    system_prompt = """Provide only bash commands for Linux without any description.
+    system_prompt = """Provide bash commands for Linux.
 If there is a lack of details, provide most logical solution.
 Ensure the output is a valid shell command.
 If multiple steps required try to combine them together.
-Before command add "CMD: ".
 """
+# Before command add "CMD: ".
 
     api_key = get_api_key()
-    chatbot = Chatbot(api_key=api_key, system_prompt=system_prompt, max_tokens=1024, truncate_limit=1024)
+    chatbot = Chatbot(api_key=api_key, system_prompt=system_prompt,
+                      max_tokens=1024, truncate_limit=1024)
 
     while True:
         try:
