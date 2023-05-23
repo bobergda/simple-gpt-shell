@@ -81,6 +81,7 @@ def main():
 If details are missing, suggest the most logical solution.
 Ensure valid shell command output.
 For multiple steps, combine them if possible.
+Use ``` only to separate commands.
 """
     print(colored(f"=== ChatGPT system_prompt\n{chatbot_prompt}", "yellow"))
     api_key = get_api_key()
