@@ -28,7 +28,7 @@ def interpret_command(chatbot, user_prompt):
         split_reply = chatbot_reply.split('```')
         commands_list = split_reply[1::2]
         commands_str = '\n'.join(command.strip()
-                                     for command in commands_list if command.strip() != "")
+                                 for command in commands_list if command.strip() != "")
         if commands_str == "":
             break
 
