@@ -15,30 +15,9 @@ def get_api_key():
 
 
 def execute_command(command):
-    command_process = subprocess.Popen(
-        command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    command_output, command_errors = command_process.communicate()
-    exit_status = command_process.wait()
-
-    output_str = command_output.decode()
-    if output_str.endswith('\n'):
-        output_str = output_str[:-1]
-
-    error_str = command_errors.decode()
-    if error_str.endswith('\n'):
-        error_str = error_str[:-1]
-
-    print(
-        colored(f"=== Command output - exit({exit_status})\n{output_str}", "magenta"))
-    if error_str != "":
-        print(
-            colored(f"{error_str}", "red"))
-
-    prompt = f"Analyze command output\n{output_str}"
-    if error_str != "":
-        prompt += f"\nstderr:\n{error_str}"
-
-    return prompt
+    result = subprocess.run(
+        command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    return result.stdout
 
 
 def interpret_command(chatbot, user_prompt):
@@ -47,20 +26,23 @@ def interpret_command(chatbot, user_prompt):
 
     while "```" in chatbot_reply:
         split_reply = chatbot_reply.split('```')
-        parsed_commands = split_reply[1::2]
-        commands_summary = '\n'.join(command.strip()
-                                     for command in parsed_commands if command.strip() != "")
-        if commands_summary == "":
+        commands_list = split_reply[1::2]
+        commands_str = '\n'.join(command.strip()
+                                     for command in commands_list if command.strip() != "")
+        if commands_str == "":
             break
 
-        print(colored(f"=== Command\n{commands_summary}", "blue"))
+        print(colored(f"=== Command\n{commands_str}", "blue"))
         run_confirmation = input(
             colored(f"Do you want to run the command? (y/N): ", "green"))
 
         if run_confirmation.lower() == "y":
-            command_output = execute_command(commands_summary)
+            command_output = execute_command(commands_str)
+            print(
+                colored(f"=== Command output\n{command_output}", "magenta"))
+            prompt = f"Analyze command output\n{command_output}"
 
-            chatbot_reply = chatbot.ask(command_output)
+            chatbot_reply = chatbot.ask(prompt)
             print(colored(f"=== Response\n{chatbot_reply}", "yellow"))
         else:
             break
