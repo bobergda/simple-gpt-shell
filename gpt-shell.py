@@ -53,6 +53,10 @@ def get_os_and_shell_names():
     shell_name = os.path.basename(os.environ.get("SHELL", "bash"))
     if os_name == "Linux":
         os_name += " " + distro.name(pretty=True)
+    elif os_name == "Darwin":
+        os_name += " " + platform.mac_ver()[0]
+    elif os_name == "Windows":
+        os_name += " " + platform.release()
     return os_name, shell_name
 
 
