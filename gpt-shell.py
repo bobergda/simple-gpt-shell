@@ -17,7 +17,7 @@ def get_api_key():
 def execute_command(command):
     result = subprocess.run(
         command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    return result.stdout
+    return result
 
 
 def interpret_command(chatbot, user_prompt):
@@ -38,9 +38,14 @@ def interpret_command(chatbot, user_prompt):
 
         if run_confirmation.lower() == "y":
             command_output = execute_command(commands_str)
+            prompt = f"Analyze command output\n{command_output.stdout}"
+
             print(
-                colored(f"=== Command output\n{command_output}", "magenta"))
-            prompt = f"Analyze command output\n{command_output}"
+                colored(f"=== Command output\n{command_output.stdout}", "magenta"))
+            if command_output.stderr != "":
+                print(
+                    colored(f"=== Command error\n{command_output.stderr}", "red"))
+                prompt += f"\n{command_output.stderr}"
 
             chatbot_reply = chatbot.ask(prompt)
             print(colored(f"=== Response\n{chatbot_reply}", "yellow"))
