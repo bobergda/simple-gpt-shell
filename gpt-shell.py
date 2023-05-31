@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import os
 import subprocess
 import openai
@@ -34,6 +33,15 @@ def request_chatbot_response(prompt):
 def run_shell_command(command):
     result = subprocess.run(
         command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    
+    if result.stdout != "":
+        stdout_lines = result.stdout.split("\n")
+        for i, line in enumerate(stdout_lines):
+            if "KEY" in line:
+                post_key_content = line[line.find("KEY") + 3:].strip()
+                if "=" in post_key_content:
+                    stdout_lines[i] = line.split("=")[0] + "=<API_KEY>"
+        result.stdout = "\n".join(stdout_lines)
     return result
 
 
