@@ -1,3 +1,4 @@
-revChatGPT
+openai
 termcolor
 distro
+keyboard
