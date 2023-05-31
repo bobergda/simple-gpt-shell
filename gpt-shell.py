@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import subprocess
 from revChatGPT.V3 import Chatbot
@@ -33,15 +34,33 @@ def interpret_command(chatbot, user_prompt):
             break
 
         print(colored(f"=== Command\n{commands_str}", "blue"))
-        run_confirmation = input(
-            colored(f"Do you want to run the command? (y/N): ", "green"))
 
-        if run_confirmation.lower() == "y":
+        action = input(
+            colored(f"Do you want to run (y) or edit (e) the command? (y/e/N): ", "green"))
+
+        if action.lower() == "e":
+            commands_str = input(
+                colored("Enter the modified command: ", "cyan"))
+            action = input(
+                colored(f"Do you want to run the command? (y/N): ", "green"))
+
+        if action.lower() == "y":
             command_output = execute_command(commands_str)
-            prompt = f"Analyze command output\n{command_output.stdout}"
+
+            stdout = ""
+            if command_output.stdout != "":
+                stdout_lines = command_output.stdout.split("\n")
+                for i, line in enumerate(stdout_lines):
+                    if "KEY" in line:
+                        post_key_content = line[line.find("KEY") + 3:].strip()
+                        if "=" in post_key_content:
+                            stdout_lines[i] = line.split("=")[0] + "=<API_KEY>"
+                stdout = "\n".join(stdout_lines)
+
+            prompt = f"Analyze command output\n{stdout}"
 
             print(
-                colored(f"=== Command output\n{command_output.stdout}", "magenta"))
+                colored(f"=== Command output\n{stdout}", "magenta"))
             if command_output.stderr != "":
                 print(
                     colored(f"=== Command error\n{command_output.stderr}", "red"))
@@ -57,7 +76,8 @@ def get_os_and_shell_names():
     os_name = platform.system()
     shell_name = os.path.basename(os.environ.get("SHELL", "bash"))
     if os_name == "Linux":
-        os_name += " " + distro.name(pretty=True)
+        # os_name += " " + distro.name(pretty=True)
+        pass
     elif os_name == "Darwin":
         os_name += " " + platform.mac_ver()[0]
     elif os_name == "Windows":
