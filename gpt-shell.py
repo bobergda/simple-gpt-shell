@@ -5,9 +5,13 @@ import openai
 from termcolor import colored
 import platform
 import distro
+import tiktoken
+
 
 # define system_prompt as a global variable
 global system_prompt
+MAX_PROMPT_TOKENS = 4096
+encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
 
 
 def load_openai_api_key():
@@ -19,6 +23,16 @@ def load_openai_api_key():
 
 
 def request_chatbot_response(prompt):
+    system_prompt_tokens = encoding.encode(system_prompt)
+    max_tokens = MAX_PROMPT_TOKENS - 1024 - len(system_prompt_tokens)
+    tokens = encoding.encode(prompt)
+    if len(tokens) > max_tokens:
+        prompt = encoding.decode(tokens[:max_tokens])
+        # remove last line to avoid incomplete output
+        prompt = prompt[:prompt.rfind("\n")]
+        print(colored(
+            f"Warning: prompt was truncated to {MAX_PROMPT_TOKENS} tokens:\n{prompt}", "yellow"))
+
     chat_prompt = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt}
