@@ -6,6 +6,9 @@ from termcolor import colored
 import platform
 import distro
 
+# define system_prompt as a global variable
+global system_prompt
+
 
 def load_openai_api_key():
     api_key = os.getenv("OPENAI_API_KEY", "")
@@ -15,7 +18,7 @@ def load_openai_api_key():
     openai.api_key = api_key
 
 
-def request_chatbot_response(prompt, system_prompt):
+def request_chatbot_response(prompt):
     chat_prompt = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt}
@@ -34,14 +37,14 @@ def run_shell_command(command):
     return result
 
 
-def interpret_and_execute_command(system_prompt, user_prompt):
+def interpret_and_execute_command(user_prompt):
     if user_prompt == "e":
-        manual_command_mode(system_prompt)
+        manual_command_mode()
     else:
-        auto_command_mode(user_prompt, system_prompt)
+        auto_command_mode(user_prompt)
 
 
-def manual_command_mode(system_prompt):
+def manual_command_mode():
     print(colored("Manual command mode activated. Please enter your command:", "green"))
     command_str = input()
     command_output = run_shell_command(command_str)
@@ -51,23 +54,23 @@ def manual_command_mode(system_prompt):
         prompt += "\nError output:\n" + command_output.stderr
     print_command_output(command_output)
 
-    chatbot_reply = request_chatbot_response(prompt, system_prompt)
+    chatbot_reply = request_chatbot_response(prompt)
     print_chatbot_response(chatbot_reply)
-    execute_commands_in_chatbot_response(system_prompt, chatbot_reply)
+    execute_commands_in_chatbot_response(chatbot_reply)
 
 
-def auto_command_mode(user_prompt, system_prompt):
-    chatbot_reply = request_chatbot_response(user_prompt, system_prompt)
+def auto_command_mode(user_prompt):
+    chatbot_reply = request_chatbot_response(user_prompt)
     print_chatbot_response(chatbot_reply)
-    execute_commands_in_chatbot_response(system_prompt, chatbot_reply)
+    execute_commands_in_chatbot_response(chatbot_reply)
 
 
-def execute_commands_in_chatbot_response(system_prompt, chatbot_reply):
+def execute_commands_in_chatbot_response(chatbot_reply):
     while "```" in chatbot_reply:
         split_reply = chatbot_reply.split('```')
         commands_list = split_reply[1::2]
         command_str = '\n'.join(command.strip()
-                                 for command in commands_list if command.strip() != "")
+                                for command in commands_list if command.strip() != "")
         if command_str == "":
             break
 
@@ -89,7 +92,7 @@ def execute_commands_in_chatbot_response(system_prompt, chatbot_reply):
                 prompt += "\nError output:\n" + command_output.stderr
             print_command_output(command_output)
 
-            chatbot_reply = request_chatbot_response(prompt, system_prompt)
+            chatbot_reply = request_chatbot_response(prompt)
             print_chatbot_response(chatbot_reply)
         else:
             break
@@ -119,21 +122,23 @@ def get_os_and_shell_info():
 
 def main():
     os_name, shell_name = get_os_and_shell_info()
+    # use the global system_prompt variable
+    global system_prompt
     system_prompt = f"""Provide {shell_name} commands for {os_name}.
 If details are missing, suggest the most logical solution.
 Ensure valid shell command output.
 For multiple steps, combine them if possible.
 Use ``` only to separate commands.
 """
-
-    print(colored(f"Your current environment: Shell={shell_name}, OS={os_name}", "green"))
+    print(
+        colored(f"Your current environment: Shell={shell_name}, OS={os_name}", "green"))
     print(colored("Type 'e' to enter manual command mode\n", "green"))
     load_openai_api_key()
 
     while True:
         try:
             user_input = input(colored("ChatGPT: ", "green"))
-            interpret_and_execute_command(system_prompt, user_input)
+            interpret_and_execute_command(user_input)
         except subprocess.CalledProcessError as e:
             print(colored(
                 f"Error: Command failed with exit code {e.returncode}: {e.output}", "red"))
