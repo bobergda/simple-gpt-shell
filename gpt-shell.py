@@ -31,7 +31,7 @@ def request_chatbot_response(prompt):
         # remove last line to avoid incomplete output
         prompt = prompt[:prompt.rfind("\n")]
         print(colored(
-            f"Warning: prompt was truncated to {MAX_PROMPT_TOKENS} tokens:\n{prompt}", "yellow"))
+            f"Warning: prompt was truncated to {max_tokens} tokens:\n{prompt}", "yellow"))
 
     chat_prompt = [
         {"role": "system", "content": system_prompt},
@@ -135,7 +135,7 @@ def get_os_and_shell_info():
     os_name = platform.system()
     shell_name = os.path.basename(os.environ.get("SHELL", "bash"))
     if os_name == "Linux":
-        pass
+        os_name += " " + distro.name()
     elif os_name == "Darwin":
         os_name += " " + platform.mac_ver()[0]
     elif os_name == "Windows":
