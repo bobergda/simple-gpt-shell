@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import subprocess
 import openai
@@ -33,7 +34,7 @@ def request_chatbot_response(prompt):
 def run_shell_command(command):
     result = subprocess.run(
         command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    
+
     if result.stdout != "":
         stdout_lines = result.stdout.split("\n")
         for i, line in enumerate(stdout_lines):
@@ -56,7 +57,7 @@ def manual_command_mode():
     print(colored("Manual command mode activated. Please enter your command:", "green"))
     command_str = input()
     command_output = run_shell_command(command_str)
-    prompt = f"I executed the '{command_str}' myself and got this output:\n" + \
+    prompt = f"Analyze command '{command_str}' output:\n" + \
         command_output.stdout
     if command_output.stderr != "":
         prompt += "\nError output:\n" + command_output.stderr
@@ -95,7 +96,7 @@ def execute_commands_in_chatbot_response(chatbot_reply):
 
         if action.lower() == "y":
             command_output = run_shell_command(command_str)
-            prompt = f"Analyze command output\n{command_output.stdout}"
+            prompt = f"Analyze command output:\n{command_output.stdout}"
             if command_output.stderr != "":
                 prompt += "\nError output:\n" + command_output.stderr
             print_command_output(command_output)
