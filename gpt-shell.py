@@ -126,7 +126,8 @@ For multiple steps, combine them if possible.
 Use ``` only to separate commands.
 """
 
-    print(colored(f"=== ChatGPT system prompt\n{system_prompt}", "yellow"))
+    print(colored(f"Your current environment: Shell={shell_name}, OS={os_name}", "green"))
+    print(colored("Type 'e' to enter manual command mode\n", "green"))
     load_openai_api_key()
 
     while True:
