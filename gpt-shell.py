@@ -6,6 +6,9 @@ from termcolor import colored
 import platform
 import distro
 import tiktoken
+from prompt_toolkit import ANSI, PromptSession
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.shortcuts import input_dialog
 
 
 class OpenAIHelper:
@@ -86,6 +89,7 @@ class Application:
         self.openai_helper = openai_helper
         self.command_helper = command_helper
         self.os_helper = os_helper
+        self.session = PromptSession()
 
     def interpret_and_execute_command(self, user_prompt):
         if user_prompt == "e":
@@ -95,7 +99,7 @@ class Application:
 
     def manual_command_mode(self):
         print(colored("Manual command mode activated. Please enter your command:", "green"))
-        command_str = input()
+        command_str = self.session.prompt()
         command_output = self.command_helper.run_shell_command(command_str)
         prompt = f"Analyze command '{command_str}' output:\n" + \
             command_output.stdout
@@ -124,21 +128,21 @@ class Application:
 
             print(colored(f"=== Command\n{command_str}", "blue"))
 
-            action = input(
-                colored(f"Do you want to run (y) or edit (e) the command? (y/e/N): ", "green"))
-
+            action = self.session.prompt(ANSI(
+                colored(f"Do you want to run (y) or edit (e) the command? (y/e/N): ", "green")))
+            
             if action.lower() == "e":
-                command_str = input(
-                    colored("Enter the modified command: ", "cyan"))
-                action = input(
-                    colored(f"Do you want to run the command? (y/N): ", "green"))
+                command_str = self.session.prompt(ANSI(
+                    colored("Enter the modified command: ", "cyan")), default=command_str)
+                action = self.session.prompt(ANSI(
+                    colored(f"Do you want to run the command? (y/N): ", "green")))
 
             if action.lower() == "y":
                 command_output = self.command_helper.run_shell_command(
                     command_str)
                 prompt = f"Analyze command output:\n{command_output.stdout}"
                 if command_output.stderr != "":
-                    prompt += "\nError output:\n{command_output.stderr}"
+                    prompt += "\nError output:\n" + command_output.stderr
                 self.command_helper.print_command_output(command_output)
 
                 chatbot_reply = self.openai_helper.request_chatbot_response(
@@ -159,7 +163,8 @@ class Application:
 
         while True:
             try:
-                user_input = input(colored("ChatGPT: ", "green"))
+                user_input = self.session.prompt(
+                    ANSI(colored("ChatGPT: ", "green")))
                 self.interpret_and_execute_command(user_input)
             except subprocess.CalledProcessError as e:
                 print(colored(
