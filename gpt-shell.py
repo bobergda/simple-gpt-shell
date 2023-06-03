@@ -99,7 +99,7 @@ class Application:
 
     def manual_command_mode(self):
         print(colored("Manual command mode activated. Please enter your command:", "green"))
-        command_str = self.session.prompt()
+        command_str = self.session.prompt("")
         command_output = self.command_helper.run_shell_command(command_str)
         prompt = f"Analyze command '{command_str}' output:\n" + \
             command_output.stdout
