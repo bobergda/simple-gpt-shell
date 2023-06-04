@@ -85,10 +85,9 @@ class OSHelper:
 
 
 class Application:
-    def __init__(self, openai_helper, command_helper, os_helper):
+    def __init__(self, openai_helper, command_helper):
         self.openai_helper = openai_helper
         self.command_helper = command_helper
-        self.os_helper = os_helper
         self.session = PromptSession()
 
     def interpret_and_execute_command(self, user_prompt):
@@ -158,7 +157,7 @@ class Application:
         return prompt
 
     def run(self):
-        os_name, shell_name = self.os_helper.get_os_and_shell_info()
+        os_name, shell_name = OSHelper.get_os_and_shell_info()
         print(
             colored(f"Your current environment: Shell={shell_name}, OS={os_name}", "green"))
         print(colored("Type 'e' to enter manual command mode\n", "green"))
@@ -182,14 +181,15 @@ class Application:
 
 
 if __name__ == "__main__":
-    system_prompt = f"""Provide shell commands for the operating system.
+    os_name, shell_name = OSHelper.get_os_and_shell_info()
+    system_prompt = f"""Provide {shell_name} commands for {os_name}.
     If details are missing, suggest the most logical solution.
     Ensure valid shell command output.
     For multiple steps, combine them if possible.
+    Don't add shell interpreter (e.g. bash).
     Use ``` only to separate commands.
     """
     openai_helper = OpenAIHelper(system_prompt)
     command_helper = CommandHelper()
-    os_helper = OSHelper()
-    application = Application(openai_helper, command_helper, os_helper)
+    application = Application(openai_helper, command_helper)
     application.run()
