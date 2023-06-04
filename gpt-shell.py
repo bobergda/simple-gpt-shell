@@ -59,8 +59,7 @@ class CommandHelper:
 
         stderr_data = process.stderr.read()
         if stderr_data:
-            print(colored(f"=== Command error", "red"))
-            print(colored(stderr_data, "red"))
+            print(colored(f"=== Command error\n{stderr_data}", "red"))
 
         process.wait()
 
@@ -162,26 +161,31 @@ class Application:
         # print(colored(f"=== Prompt\n{prompt}", "blue"))
         return prompt
 
+    @staticmethod
+    def exit_application():
+        print(colored("Exiting...", "yellow"))
+        exit(0)
+
     def run(self):
         os_name, shell_name = OSHelper.get_os_and_shell_info()
         print(
             colored(f"Your current environment: Shell={shell_name}, OS={os_name}", "green"))
-        print(colored("Type 'e' to enter manual command mode\n", "green"))
+        print(colored("Type 'e' to enter manual command mode or 'q' to quit\n", "green"))
 
         while True:
             try:
                 user_input = self.session.prompt(
                     ANSI(colored("ChatGPT: ", "green")))
+                if user_input.lower() == 'q':
+                    self.exit_application()
                 self.interpret_and_execute_command(user_input)
             except subprocess.CalledProcessError as e:
                 print(colored(
                     f"Error: Command failed with exit code {e.returncode}: {e.output}", "red"))
             except KeyboardInterrupt:
-                print(colored("Exiting...", "yellow"))
-                exit(0)
-            except EOFError:
-                print(colored("Exiting...", "yellow"))
-                exit(0)
+                self.exit_application()
+            # except EOFError:
+            #     self.exit_application()
             except Exception as e:
                 print(colored(f"Error of type {type(e).__name__}: {e}", "red"))
 
