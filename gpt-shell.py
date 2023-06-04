@@ -76,11 +76,11 @@ class OSHelper:
         os_name = platform.system()
         shell_name = os.path.basename(os.environ.get("SHELL", "bash"))
         if os_name == "Linux":
-            os_name += " " + distro.name()
+            os_name += f" {distro.name()}"
         elif os_name == "Darwin":
-            os_name += " " + platform.mac_ver()[0]
+            os_name += f" {platform.mac_ver()[0]}"
         elif os_name == "Windows":
-            os_name += " " + platform.release()
+            os_name += f" {platform.release()}"
         return os_name, shell_name
 
 
@@ -101,10 +101,7 @@ class Application:
         print(colored("Manual command mode activated. Please enter your command:", "green"))
         command_str = self.session.prompt("")
         command_output = self.command_helper.run_shell_command(command_str)
-        prompt = f"Analyze command '{command_str}' output:\n" + \
-            command_output.stdout
-        if command_output.stderr != "":
-            prompt += "\nError output:\n" + command_output.stderr
+        prompt = self.generate_prompt(command_str, command_output)
         self.command_helper.print_command_output(command_output)
 
         chatbot_reply = self.openai_helper.request_chatbot_response(prompt)
@@ -130,7 +127,7 @@ class Application:
 
             action = self.session.prompt(ANSI(
                 colored(f"Do you want to run (y) or edit (e) the command? (y/e/N): ", "green")))
-            
+
             if action.lower() == "e":
                 command_str = self.session.prompt(ANSI(
                     colored("Enter the modified command: ", "cyan")), default=command_str)
@@ -140,9 +137,7 @@ class Application:
             if action.lower() == "y":
                 command_output = self.command_helper.run_shell_command(
                     command_str)
-                prompt = f"Analyze command output:\n{command_output.stdout}"
-                if command_output.stderr != "":
-                    prompt += "\nError output:\n" + command_output.stderr
+                prompt = self.generate_prompt(command_str, command_output)
                 self.command_helper.print_command_output(command_output)
 
                 chatbot_reply = self.openai_helper.request_chatbot_response(
@@ -154,6 +149,13 @@ class Application:
     @staticmethod
     def print_chatbot_response(chatbot_reply):
         print(colored(f"=== Response\n{chatbot_reply}", "yellow"))
+
+    @staticmethod
+    def generate_prompt(command_str, command_output):
+        prompt = f"Analyze command '{command_str}' output:\n{command_output.stdout}"
+        if command_output.stderr != "":
+            prompt += f"\nError output:\n{command_output.stderr}"
+        return prompt
 
     def run(self):
         os_name, shell_name = self.os_helper.get_os_and_shell_info()
