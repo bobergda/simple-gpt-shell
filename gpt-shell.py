@@ -31,7 +31,7 @@ class OpenAIHelper:
             # remove last line to avoid incomplete output
             prompt = prompt[:prompt.rfind("\n")]
             print(colored(
-                f"Warning: prompt was truncated to {max_tokens} tokens:\n{prompt}", "yellow"))
+                f"Warning: prompt was truncated to {max_tokens} tokens:\n{prompt}", "blue"))
 
         chat_prompt = [
             {"role": "system", "content": self.system_prompt},
@@ -48,26 +48,33 @@ class OpenAIHelper:
 class CommandHelper:
     @staticmethod
     def run_shell_command(command):
-        result = subprocess.run(
-            command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, universal_newlines=True)
+        stdout = []
 
-        if result.stdout != "":
-            stdout_lines = result.stdout.split("\n")
+        print(f"=== Command output")
+        for line in process.stdout:
+            print(line, end="")
+            stdout.append(line)
+
+        stderr_data = process.stderr.read()
+        if stderr_data:
+            print(colored(f"=== Command error", "red"))
+            print(colored(stderr_data, "red"))
+
+        process.wait()
+
+        result = {"stdout": ''.join(stdout), "stderr": stderr_data}
+
+        if result["stdout"] != "":
+            stdout_lines = result["stdout"].split("\n")
             for i, line in enumerate(stdout_lines):
                 if "KEY" in line:
                     post_key_content = line[line.find("KEY") + 3:].strip()
                     if "=" in post_key_content:
                         stdout_lines[i] = line.split("=")[0] + "=<API_KEY>"
-            result.stdout = "\n".join(stdout_lines)
+            result["stdout"] = "\n".join(stdout_lines)
         return result
-
-    @staticmethod
-    def print_command_output(command_output):
-        print(
-            colored(f"=== Command output\n{command_output.stdout}", "magenta"))
-        if command_output.stderr != "":
-            print(
-                colored(f"=== Command error\n{command_output.stderr}", "red"))
 
 
 class OSHelper:
@@ -101,7 +108,6 @@ class Application:
         command_str = self.session.prompt("")
         command_output = self.command_helper.run_shell_command(command_str)
         prompt = self.generate_prompt(command_str, command_output)
-        self.command_helper.print_command_output(command_output)
 
         chatbot_reply = self.openai_helper.request_chatbot_response(prompt)
         self.print_chatbot_response(chatbot_reply)
@@ -137,7 +143,6 @@ class Application:
                 command_output = self.command_helper.run_shell_command(
                     command_str)
                 prompt = self.generate_prompt(command_str, command_output)
-                self.command_helper.print_command_output(command_output)
 
                 chatbot_reply = self.openai_helper.request_chatbot_response(
                     prompt)
@@ -147,13 +152,14 @@ class Application:
 
     @staticmethod
     def print_chatbot_response(chatbot_reply):
-        print(colored(f"=== Response\n{chatbot_reply}", "yellow"))
+        print(colored(f"=== Response\n{chatbot_reply}", "magenta"))
 
     @staticmethod
     def generate_prompt(command_str, command_output):
-        prompt = f"Analyze command '{command_str}' output:\n{command_output.stdout}"
-        if command_output.stderr != "":
-            prompt += f"\nError output:\n{command_output.stderr}"
+        prompt = f"Analyze command '{command_str}' output:\n{command_output['stdout']}"
+        if command_output['stderr'] != "":
+            prompt += f"\nError output:\n{command_output['stderr']}"
+        # print(colored(f"=== Prompt\n{prompt}", "blue"))
         return prompt
 
     def run(self):
