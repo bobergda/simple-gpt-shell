@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import subprocess
+import sys
 import openai
 from termcolor import colored
 import platform
@@ -18,7 +19,7 @@ class OpenAIHelper:
         self.max_prompt_tokens = max_prompt_tokens
         self.encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
         if self.api_key == "":
-            print(colored("Error: OPENAI_API_KEY is not set", "red"))
+            print(colored("Error: OPENAI_API_KEY is not set", "red"), file=sys.stderr)
             exit(1)
         openai.api_key = self.api_key
 
@@ -181,13 +182,13 @@ class Application:
                 self.interpret_and_execute_command(user_input)
             except subprocess.CalledProcessError as e:
                 print(colored(
-                    f"Error: Command failed with exit code {e.returncode}: {e.output}", "red"))
+                    f"Error: Command failed with exit code {e.returncode}: {e.output}", "red"), file=sys.stderr)
             except KeyboardInterrupt:
                 self.exit_application()
             # except EOFError:
             #     self.exit_application()
             except Exception as e:
-                print(colored(f"Error of type {type(e).__name__}: {e}", "red"))
+                print(colored(f"Error of type {type(e).__name__}: {e}", "red"), file=sys.stderr)
 
 
 if __name__ == "__main__":
