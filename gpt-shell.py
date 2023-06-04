@@ -13,11 +13,12 @@ from prompt_toolkit.shortcuts import input_dialog
 
 
 class OpenAIHelper:
-    def __init__(self, system_prompt, max_prompt_tokens=4096):
+    def __init__(self, system_prompt, model_name="gpt-3.5-turbo", max_prompt_tokens=4096):
         self.api_key = os.getenv("OPENAI_API_KEY", "")
         self.system_prompt = system_prompt
         self.max_prompt_tokens = max_prompt_tokens
-        self.encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+        self.model_name = model_name
+        self.encoding = tiktoken.encoding_for_model(self.model_name)
         if self.api_key == "":
             print(colored("Error: OPENAI_API_KEY is not set", "red"), file=sys.stderr)
             exit(1)
@@ -39,7 +40,7 @@ class OpenAIHelper:
             {"role": "user", "content": prompt}
         ]
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # or whichever model you are using
+            model=self.model_name,  # Use the declared model name
             messages=chat_prompt,
         )
         response_string = response['choices'][0]['message']['content']
@@ -188,7 +189,8 @@ class Application:
             # except EOFError:
             #     self.exit_application()
             except Exception as e:
-                print(colored(f"Error of type {type(e).__name__}: {e}", "red"), file=sys.stderr)
+                print(
+                    colored(f"Error of type {type(e).__name__}: {e}", "red"), file=sys.stderr)
 
 
 if __name__ == "__main__":
