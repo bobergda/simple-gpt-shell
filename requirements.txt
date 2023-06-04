@@ -2,3 +2,4 @@ openai
 termcolor
 distro
 prompt_toolkit
+tiktoken
