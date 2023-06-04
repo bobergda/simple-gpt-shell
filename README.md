@@ -1,13 +1,17 @@
 # Simple GPT Shell
 
-The `gpt-shell.py` script is a Python command-line interface that uses OpenAI's GPT-3 API to provide suggested commands for Linux shell commands. The script prompts the user to input a command and then provides a suggested command to execute based on the input. The script uses the `revChatGPT.V3` module to interface with the GPT-3 API and requires an API key to be set as an environment variable. The script is designed to be run in a terminal and provides a system prompt for the user to input commands. If the suggested command requires multiple steps, the script will attempt to combine them together. The output of the command is analyzed by the GPT-3 model to provide a description of the suggested command.
+The `gpt-shell.py` script is a robust Python command-line interface that harnesses the power of OpenAI's GPT models to offer insightful suggestions for Linux shell commands. Whether you input a specific command or describe a task, the application will generate an appropriate command as interpreted by the selected GPT model.
+
+Leveraging modules like `openai`, `tiktoken`, and `prompt_toolkit`, the script communicates with the chosen GPT model through the OpenAI API and enhances user interaction. For the script to function, an API key, set as an environment variable, is a necessity.
+
+Designed for terminal environment operation, this script provides a user-friendly system prompt for input. It shines in its ability to consolidate multi-step commands into a single-line command. In addition, it includes an analysis of the command's output performed by the GPT model, providing a comprehensive execution explanation along with the suggested command.
 
 ![Screen 1](screen1.png "Screen 1")
 ## Installation
 
 1. Clone the repository to your local machine.
 2. Install the required dependencies by running `pip install -r requirements.txt`.
-3. Set your OpenAI API key as an environment variable named `OPENAI_API_KEY`.
+3. Set your OpenAI API key as an environment variable `export OPENAI_API_KEY='your-api-key'`.
 
 ## Usage
 
