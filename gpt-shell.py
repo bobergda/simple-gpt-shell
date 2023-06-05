@@ -18,32 +18,82 @@ class OpenAIHelper:
         self.system_prompt = system_prompt
         self.max_prompt_tokens = max_prompt_tokens
         self.model_name = model_name
-        self.encoding = tiktoken.encoding_for_model(self.model_name)
+        self.chat_log = [{"role": "system", "content": self.system_prompt}]
+        self.get_model_for_encoding(model_name)
+
         if self.api_key == "":
             print(colored("Error: OPENAI_API_KEY is not set", "red"), file=sys.stderr)
             exit(1)
         openai.api_key = self.api_key
 
-    def request_chatbot_response(self, prompt):
-        system_prompt_tokens = self.encoding.encode(self.system_prompt)
-        max_tokens = self.max_prompt_tokens - 1024 - len(system_prompt_tokens)
-        tokens = self.encoding.encode(prompt)
-        if len(tokens) > max_tokens:
-            prompt = self.encoding.decode(tokens[:max_tokens])
+    def get_model_for_encoding(self, model):
+        if model == "gpt-3.5-turbo":
+            model = "gpt-3.5-turbo-0301"
+            # every message follows <|start|>{role/name}\n{content}<|end|>\n
+            self.tokens_per_message = 4
+            self.tokens_per_name = -1  # if there's a name, the role is omitted
+        elif model == "gpt-4":
+            model = "gpt-4-0314"
+            self.tokens_per_message = 3
+            self.tokens_per_name = 1
+        else:
+            raise NotImplementedError(
+                f"""get_model_for_encoding() is not implemented for model {model}. See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens.""")
+        try:
+            self.encoding = tiktoken.encoding_for_model(model)
+        except KeyError:
+            print("Warning: model not found. Using cl100k_base encoding.")
+            self.encoding = tiktoken.get_encoding("cl100k_base")
+        self.system_prompt_tokens = len(
+            self.encoding.encode(self.system_prompt))
+
+    def num_tokens_from_messages(self, messages, model="gpt-3.5-turbo"):
+        """Returns the number of tokens used by a list of messages."""
+        num_tokens = 0
+        for message in messages:
+            num_tokens += self.tokens_per_message
+            for key, value in message.items():
+                num_tokens += len(self.encoding.encode(value))
+                if key == "name":
+                    num_tokens += self.tokens_per_name
+        num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
+        return num_tokens
+
+    def truncate_prompt(self, prompt):
+        prompt_tokens = self.encoding.encode(prompt)
+        count_prompt_tokens = len(prompt_tokens)
+        max_prompt_tokens = self.max_prompt_tokens - 1024 - self.system_prompt_tokens
+
+        if count_prompt_tokens > max_prompt_tokens:
+            prompt = self.encoding.decode(prompt_tokens[:max_prompt_tokens])
             # remove last line to avoid incomplete output
             prompt = prompt[:prompt.rfind("\n")]
+            count_prompt_tokens = len(self.encoding.encode(prompt))
             print(colored(
-                f"Warning: prompt was truncated to {max_tokens} tokens:\n{prompt}", "blue"))
+                f"Warning: prompt was truncated to {count_prompt_tokens} tokens:\n{prompt}", "blue"))
+        return prompt
 
-        chat_prompt = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": prompt}
-        ]
+    def request_chatbot_response(self, prompt):
+        prompt = self.truncate_prompt(prompt)
+        user_message = {"role": "user", "content": prompt}
+        self.chat_log.append(user_message)
+
+        count_tokens = self.num_tokens_from_messages(self.chat_log)
+        print(colored(f"count tokens: {count_tokens}", "blue"))
+
         response = openai.ChatCompletion.create(
-            model=self.model_name,  # Use the declared model name
-            messages=chat_prompt,
+            model=self.model_name,
+            messages=self.chat_log,
         )
+        # print(colored(
+        #     f'API resonse - total tokens: {response["usage"]["total_tokens"]} prompt tokens: {response["usage"]["prompt_tokens"]} completion tokens: {response["usage"]["completion_tokens"]}', "blue"))
+        print(colored(
+            f"Remaining tokens: {self.max_prompt_tokens - response['usage']['total_tokens']}", "blue"))
+
         response_string = response['choices'][0]['message']['content']
+        ai_message = {"role": "assistant", "content": response_string}
+        self.chat_log.append(ai_message)
+
         return response_string
 
 
