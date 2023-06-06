@@ -228,11 +228,6 @@ class Application:
         # print(colored(f"=== Prompt\n{prompt}", "blue"))
         return prompt
 
-    @staticmethod
-    def exit_application():
-        print(colored("Exiting...", "yellow"))
-        exit(0)
-
     def run(self):
         os_name, shell_name = OSHelper.get_os_and_shell_info()
         print(
@@ -244,16 +239,19 @@ class Application:
                 user_input = self.session.prompt(
                     ANSI(colored("ChatGPT: ", "green")))
                 if user_input.lower() == 'q':
-                    self.exit_application()
+                    break
                 self.interpret_and_execute_command(user_input)
             except subprocess.CalledProcessError as e:
                 print(colored(
                     f"Error: Command failed with exit code {e.returncode}: {e.output}", "red"), file=sys.stderr)
             except KeyboardInterrupt:
-                self.exit_application()
+                continue
+            except EOFError:
+                break
             except Exception as e:
                 print(
                     colored(f"Error of type {type(e).__name__}: {e}", "red"), file=sys.stderr)
+        print(colored("Exiting...", "yellow"))
 
 
 if __name__ == "__main__":
