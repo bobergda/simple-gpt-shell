@@ -8,8 +8,7 @@ import platform
 import distro
 import tiktoken
 from prompt_toolkit import ANSI, PromptSession
-from prompt_toolkit.completion import WordCompleter
-from prompt_toolkit.shortcuts import input_dialog
+from prompt_toolkit.history import FileHistory
 
 
 class OpenAIHelper:
@@ -63,7 +62,7 @@ class OpenAIHelper:
     def truncate_prompt(self, prompt):
         prompt_tokens = self.encoding.encode(prompt)
         count_prompt_tokens = len(prompt_tokens)
-        max_prompt_tokens = self.max_prompt_tokens - 300 - \
+        max_prompt_tokens = self.max_prompt_tokens - 512 - \
             self.system_prompt_tokens - self.tokens_per_message
 
         if count_prompt_tokens > max_prompt_tokens:
@@ -162,7 +161,7 @@ class Application:
     def __init__(self, openai_helper, command_helper):
         self.openai_helper = openai_helper
         self.command_helper = command_helper
-        self.session = PromptSession()
+        self.session = PromptSession(history=FileHistory("/tmp/.gpts_history"))
 
     def interpret_and_execute_command(self, user_prompt):
         if user_prompt == "e":
@@ -252,8 +251,6 @@ class Application:
                     f"Error: Command failed with exit code {e.returncode}: {e.output}", "red"), file=sys.stderr)
             except KeyboardInterrupt:
                 self.exit_application()
-            # except EOFError:
-            #     self.exit_application()
             except Exception as e:
                 print(
                     colored(f"Error of type {type(e).__name__}: {e}", "red"), file=sys.stderr)
