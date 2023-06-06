@@ -18,7 +18,7 @@ class OpenAIHelper:
         self.system_prompt = system_prompt
         self.max_prompt_tokens = max_prompt_tokens
         self.model_name = model_name
-        self.chat_log = [{"role": "system", "content": self.system_prompt}]
+        self.chat_message = [{"role": "system", "content": self.system_prompt}]
         self.get_model_for_encoding(model_name)
 
         if self.api_key == "":
@@ -37,17 +37,18 @@ class OpenAIHelper:
             self.tokens_per_message = 3
             self.tokens_per_name = 1
         else:
-            raise NotImplementedError(
-                f"""get_model_for_encoding() is not implemented for model {model}. See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens.""")
+            print(colored(
+                f"get_model_for_encoding() is not implemented for model {model}.", "red"), file=sys.stderr)
         try:
             self.encoding = tiktoken.encoding_for_model(model)
         except KeyError:
-            print("Warning: model not found. Using cl100k_base encoding.")
+            print(
+                colored("Warning: model not found. Using cl100k_base encoding.", "yellow"))
             self.encoding = tiktoken.get_encoding("cl100k_base")
         self.system_prompt_tokens = len(
             self.encoding.encode(self.system_prompt))
 
-    def num_tokens_from_messages(self, messages, model="gpt-3.5-turbo"):
+    def num_tokens_from_messages(self, messages):
         """Returns the number of tokens used by a list of messages."""
         num_tokens = 0
         for message in messages:
@@ -62,7 +63,8 @@ class OpenAIHelper:
     def truncate_prompt(self, prompt):
         prompt_tokens = self.encoding.encode(prompt)
         count_prompt_tokens = len(prompt_tokens)
-        max_prompt_tokens = self.max_prompt_tokens - 1024 - self.system_prompt_tokens
+        max_prompt_tokens = self.max_prompt_tokens - 300 - \
+            self.system_prompt_tokens - self.tokens_per_message
 
         if count_prompt_tokens > max_prompt_tokens:
             prompt = self.encoding.decode(prompt_tokens[:max_prompt_tokens])
@@ -70,29 +72,43 @@ class OpenAIHelper:
             prompt = prompt[:prompt.rfind("\n")]
             count_prompt_tokens = len(self.encoding.encode(prompt))
             print(colored(
-                f"Warning: prompt was truncated to {count_prompt_tokens} tokens:\n{prompt}", "blue"))
+                f"Warning: prompt was truncated to {count_prompt_tokens} tokens:\n", "yellow"),
+                colored(f"{prompt}", "blue"), sep="")
         return prompt
+
+    def truncate_chat_message(self):
+        chat_message_tokens = self.num_tokens_from_messages(self.chat_message)
+        # print(colored(
+        #     f"before truncate_chat_message() chat message tokens: {chat_message_tokens}", "green"))
+        while chat_message_tokens > self.max_prompt_tokens - 300:
+            try:
+                self.chat_message.pop(1)
+                chat_message_tokens = self.num_tokens_from_messages(
+                    self.chat_message)
+                # print(colored(
+                #     f"truncate_chat_message() chat message tokens: {chat_message_tokens}", "green"))
+            except IndexError:
+                break
 
     def request_chatbot_response(self, prompt):
         prompt = self.truncate_prompt(prompt)
         user_message = {"role": "user", "content": prompt}
-        self.chat_log.append(user_message)
+        self.chat_message.append(user_message)
 
-        count_tokens = self.num_tokens_from_messages(self.chat_log)
-        print(colored(f"count tokens: {count_tokens}", "blue"))
+        self.truncate_chat_message()
 
         response = openai.ChatCompletion.create(
             model=self.model_name,
-            messages=self.chat_log,
+            messages=self.chat_message,
         )
         # print(colored(
         #     f'API resonse - total tokens: {response["usage"]["total_tokens"]} prompt tokens: {response["usage"]["prompt_tokens"]} completion tokens: {response["usage"]["completion_tokens"]}', "blue"))
         print(colored(
-            f"Remaining tokens: {self.max_prompt_tokens - response['usage']['total_tokens']}", "blue"))
+            f"Remaining tokens: {self.max_prompt_tokens - response['usage']['total_tokens']}", "green"))
 
         response_string = response['choices'][0]['message']['content']
         ai_message = {"role": "assistant", "content": response_string}
-        self.chat_log.append(ai_message)
+        self.chat_message.append(ai_message)
 
         return response_string
 
