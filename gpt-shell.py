@@ -9,6 +9,7 @@ import distro
 import tiktoken
 from prompt_toolkit import ANSI, PromptSession
 from prompt_toolkit.history import FileHistory
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
 
 class OpenAIHelper:
@@ -161,7 +162,8 @@ class Application:
     def __init__(self, openai_helper, command_helper):
         self.openai_helper = openai_helper
         self.command_helper = command_helper
-        self.session = PromptSession(history=FileHistory("/tmp/.gpts_history"))
+        self.session = PromptSession(history=FileHistory(
+            "/tmp/.gpts_history"), auto_suggest=AutoSuggestFromHistory())
 
     def interpret_and_execute_command(self, user_prompt):
         if user_prompt == "e":
