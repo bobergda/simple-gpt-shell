@@ -162,8 +162,8 @@ class Application:
     def __init__(self, openai_helper, command_helper):
         self.openai_helper = openai_helper
         self.command_helper = command_helper
-        self.session = PromptSession(history=FileHistory(
-            "/tmp/.gpts_history"), auto_suggest=AutoSuggestFromHistory())
+        self.session = PromptSession(history=FileHistory(os.path.expanduser(
+            '~') + "/.gpts_history"), auto_suggest=AutoSuggestFromHistory())
 
     def interpret_and_execute_command(self, user_prompt):
         if user_prompt == "e":
