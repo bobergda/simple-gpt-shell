@@ -13,10 +13,10 @@ from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
 
 class OpenAIHelper:
-    def __init__(self, system_prompt, model_name="gpt-3.5-turbo", max_prompt_tokens=4096):
+    def __init__(self, system_prompt, model_name="gpt-3.5-turbo", max_tokens=4096):
         self.api_key = os.getenv("OPENAI_API_KEY", "")
         self.system_prompt = system_prompt
-        self.max_prompt_tokens = max_prompt_tokens
+        self.max_tokens = max_tokens
         self.model_name = model_name
         self.chat_message = [{"role": "system", "content": self.system_prompt}]
         self.get_model_for_encoding(model_name)
@@ -63,7 +63,7 @@ class OpenAIHelper:
     def truncate_prompt(self, prompt):
         prompt_tokens = self.encoding.encode(prompt)
         count_prompt_tokens = len(prompt_tokens)
-        max_prompt_tokens = self.max_prompt_tokens - 512 - \
+        max_prompt_tokens = self.max_tokens - 512 - \
             self.system_prompt_tokens - self.tokens_per_message
 
         if count_prompt_tokens > max_prompt_tokens:
@@ -80,7 +80,7 @@ class OpenAIHelper:
         chat_message_tokens = self.num_tokens_from_messages(self.chat_message)
         # print(colored(
         #     f"before truncate_chat_message() chat message tokens: {chat_message_tokens}", "green"))
-        while chat_message_tokens > self.max_prompt_tokens - 300:
+        while chat_message_tokens > self.max_tokens - 300:
             try:
                 self.chat_message.pop(1)
                 chat_message_tokens = self.num_tokens_from_messages(
@@ -104,7 +104,7 @@ class OpenAIHelper:
         # print(colored(
         #     f'API resonse - total tokens: {response["usage"]["total_tokens"]} prompt tokens: {response["usage"]["prompt_tokens"]} completion tokens: {response["usage"]["completion_tokens"]}', "blue"))
         print(colored(
-            f"Remaining tokens: {self.max_prompt_tokens - response['usage']['total_tokens']}", "green"))
+            f"Remaining tokens: {self.max_tokens - response['usage']['total_tokens']}", "green"))
 
         response_string = response['choices'][0]['message']['content']
         ai_message = {"role": "assistant", "content": response_string}
