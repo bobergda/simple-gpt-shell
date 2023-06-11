@@ -5,7 +5,11 @@ The `gpt-shell.py` script is a robust Python command-line interface that harness
 The script communicates with the chosen GPT model through the OpenAI API and enhances user interaction. For the script to function, an API key, set as an environment variable, is a necessity.
 
 Designed for terminal environment operation, this script provides a user-friendly system prompt for input. In addition to sending the output of the command to the terminal, the script also sends it to the OpenAI GPT chat, which can provide additional suggestions for further commands to execute. It shines in its ability to consolidate multi-step commands into a single-line command. In addition, it includes an analysis of the command's output performed by the GPT model, providing a comprehensive execution explanation along with the suggested command.
+
 ![Screen 1](screen1.png "Screen 1")
+
+[![Wideo](https://img.youtube.com/vi/dNrxlJfLHkQ/maxresdefault.jpg)](https://youtube.com/shorts/dNrxlJfLHkQ?feature=share)
+
 ## Installation
 
 1. Clone the repository to your local machine.
