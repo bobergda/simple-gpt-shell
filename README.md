@@ -8,7 +8,7 @@ Designed for terminal environment operation, this script provides a user-friendl
 
 ![Screen 1](screen1.png "Screen 1")
 
-[![Wideo](https://img.youtube.com/vi/dNrxlJfLHkQ/maxresdefault.jpg)](https://youtube.com/shorts/dNrxlJfLHkQ?feature=share)
+[![Wideo](https://img.youtube.com/vi/dNrxlJfLHkQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=dNrxlJfLHkQ)
 
 ## Installation
 
