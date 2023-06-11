@@ -1,11 +1,10 @@
 # Simple GPT Shell
 
-The `gpt-shell.py` script is a robust Python command-line interface that harnesses the power of OpenAI's GPT models to offer insightful suggestions for Linux shell commands. Whether you input a specific command or describe a task, the application will generate an appropriate command as interpreted by the selected GPT model.
+The `gpt-shell.py` script is a robust Python command-line interface that harnesses the power of OpenAI's GPT models to offer insightful suggestions for shell commands. Whether you input a specific command or describe a task, the application will generate an appropriate command as interpreted by the selected GPT model.
 
-Leveraging modules like `openai`, `tiktoken`, and `prompt_toolkit`, the script communicates with the chosen GPT model through the OpenAI API and enhances user interaction. For the script to function, an API key, set as an environment variable, is a necessity.
+The script communicates with the chosen GPT model through the OpenAI API and enhances user interaction. For the script to function, an API key, set as an environment variable, is a necessity.
 
-Designed for terminal environment operation, this script provides a user-friendly system prompt for input. It shines in its ability to consolidate multi-step commands into a single-line command. In addition, it includes an analysis of the command's output performed by the GPT model, providing a comprehensive execution explanation along with the suggested command.
-
+Designed for terminal environment operation, this script provides a user-friendly system prompt for input. In addition to sending the output of the command to the terminal, the script also sends it to the OpenAI GPT chat, which can provide additional suggestions for further commands to execute. It shines in its ability to consolidate multi-step commands into a single-line command. In addition, it includes an analysis of the command's output performed by the GPT model, providing a comprehensive execution explanation along with the suggested command.
 ![Screen 1](screen1.png "Screen 1")
 ## Installation
 
