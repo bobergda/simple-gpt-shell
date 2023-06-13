@@ -260,8 +260,7 @@ if __name__ == "__main__":
     os_name, shell_name = OSHelper.get_os_and_shell_info()
     system_prompt = f"""Provide {shell_name} commands for {os_name}.
     If details are missing, suggest the most logical solution.
-    Ensure valid shell command output.
-    For multiple steps, combine them if possible.
+    Don't show example output.
     Don't add shell interpreter (e.g. bash).
     Use ``` only to separate commands.
     """
