@@ -148,7 +148,7 @@ class OSHelper:
     @staticmethod
     def get_os_and_shell_info():
         os_name = platform.system()
-        shell_name = os.path.basename(os.environ.get("SHELL", "bash"))
+        shell_name = os.path.basename(os.environ.get("SHELL", ""))
         if os_name == "Linux":
             os_name += f" {distro.name()}"
         elif os_name == "Darwin":
