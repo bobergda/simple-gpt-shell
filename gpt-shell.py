@@ -27,13 +27,13 @@ class OpenAIHelper:
         openai.api_key = self.api_key
 
     def get_model_for_encoding(self, model):
-        if model == "gpt-3.5-turbo":
-            model = "gpt-3.5-turbo-0301"
+        if "gpt-3.5-turbo" in model:
+            # model = "gpt-3.5-turbo-0301"
             # every message follows <|start|>{role/name}\n{content}<|end|>\n
             self.tokens_per_message = 4
             self.tokens_per_name = -1  # if there's a name, the role is omitted
-        elif model == "gpt-4":
-            model = "gpt-4-0314"
+        elif "gpt-4" in model:
+            # model = "gpt-4-0301"
             self.tokens_per_message = 3
             self.tokens_per_name = 1
         else:
@@ -264,7 +264,10 @@ if __name__ == "__main__":
     Don't add shell interpreter (e.g. bash).
     Use ``` only to separate commands.
     """
-    openai_helper = OpenAIHelper(system_prompt)
+    openai_helper = OpenAIHelper(system_prompt,
+                                 model_name="gpt-3.5-turbo"
+                                 # model_name="gpt-3.5-turbo-0613"
+                                 )
     command_helper = CommandHelper()
     application = Application(openai_helper, command_helper)
     application.run()
