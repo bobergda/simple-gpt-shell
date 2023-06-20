@@ -8,7 +8,7 @@ from termcolor import colored
 import platform
 import distro
 import tiktoken
-from prompt_toolkit import ANSI, PromptSession
+from prompt_toolkit import ANSI, PromptSession, prompt
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 import ast
@@ -25,7 +25,6 @@ class OpenAIHelper:
         self.max_tokens = max_tokens
         self.remaning_tokens = max_tokens
         self.model_name = model_name
-        # self.chat_message = [{"role": "system", "content": self.system_prompt}]
         self.chat_messages = []
         self.get_model_for_encoding(model_name)
         self.os_name, self.shell_name = OSHelper.get_os_and_shell_info()
@@ -53,12 +52,9 @@ class OpenAIHelper:
 
     def get_model_for_encoding(self, model: str):
         if "gpt-3.5-turbo" in model:
-            # model = "gpt-3.5-turbo-0301"
-            # every message follows <|start|>{role/name}\n{content}<|end|>\n
             self.tokens_per_message = 4
             self.tokens_per_name = -1  # if there's a name, the role is omitted
         elif "gpt-4" in model:
-            # model = "gpt-4-0301"
             self.tokens_per_message = 3
             self.tokens_per_name = 1
         else:
@@ -90,26 +86,29 @@ class OpenAIHelper:
         num_tokens += 2  # every reply is primed with <|start|>assistant<|message|>
         return num_tokens
 
-    def truncate_prompt(self, prompt):
-        prompt_tokens = self.encoding.encode(prompt)
-        count_prompt_tokens = len(prompt_tokens)
-        max_prompt_tokens = self.max_tokens - 512 - self.tokens_per_message
+    def truncate_outputs(self, outputs):
+        """Truncates the outputs list so that the total tokens fit the max_tokens limit."""
+        # outputs_with_tokens = [(i, self.encoding.encode(output))
+        #                        for i, output in enumerate(outputs)]
+        # # Sort by the length of tokens
+        # outputs_with_tokens.sort(key=lambda x: len(x[1]), reverse=True)
 
-        if count_prompt_tokens > max_prompt_tokens:
-            prompt = self.encoding.decode(prompt_tokens[:max_prompt_tokens])
-            # remove last line to avoid incomplete output
-            prompt = prompt[:prompt.rfind("\n")]
-            count_prompt_tokens = len(self.encoding.encode(prompt))
-            print(colored(
-                f"Warning: prompt was truncated to {count_prompt_tokens} tokens:\n", "yellow"),
-                colored(f"{prompt}", "blue"), sep="")
-        return prompt
+        # total_tokens = sum(len(tokens) for _, tokens in outputs_with_tokens)
+        # for index, tokens in outputs_with_tokens:
+        #     if total_tokens <= self.max_tokens:
+        #         break
+        #     total_tokens -= len(tokens)
+        #     outputs[index] = ''
+        #     print(colored(
+        #         f"Warning: output was removed to fit the {self.max_tokens} tokens limit.\n", "yellow"))
+
+        return outputs
 
     def truncate_chat_message(self):
         chat_message_tokens = self.get_chat_message_tokens()
         print(colored(
             f"before truncate_chat_message() chat message tokens: {chat_message_tokens}", "green"))
-        while chat_message_tokens > self.max_tokens - 300:
+        while chat_message_tokens > self.max_tokens - 512:
             try:
                 self.chat_messages.pop(0)
                 chat_message_tokens = self.get_chat_message_tokens()
@@ -148,6 +147,7 @@ class OpenAIHelper:
                         self.chat_messages.append(message_to_add)
                         commands = json.loads(
                             response_message["function_call"]["arguments"])
+                        commands = commands["commands"]
                     else:
                         print(colored(
                             f"Warning: function {function_name} is not implemented.", "yellow"))
@@ -155,6 +155,8 @@ class OpenAIHelper:
         return commands
 
     def send_commands_outputs(self, outputs):
+        outputs = self.truncate_outputs(outputs)
+
         outputs = json.dumps(outputs)
         message = {
             "role": "function",
@@ -194,6 +196,7 @@ class OpenAIHelper:
                         self.chat_messages.append(message_to_add)
                         commands = json.loads(
                             response_message["function_call"]["arguments"])
+                        commands = commands["commands"]
                     else:
                         print(colored(
                             f"Warning: function {function_name} is not implemented.", "yellow"))
@@ -264,11 +267,13 @@ class Application:
         print(colored("Manual command mode activated. Please enter your command:", "green"))
         command_str = self.session.prompt("")
         command_output = self.command_helper.run_shell_command(command_str)
-        # prompt = self.generate_prompt(command_str, command_output)
+        outputs = [command_output]
 
-        # chatbot_reply = self.openai_helper.request_chatbot_response(prompt)
-        # self.print_chatbot_response(chatbot_reply)
-        # self.execute_commands_in_chatbot_response(chatbot_reply)
+        response, commands = self.openai_helper.send_commands_outputs(outputs)
+        print(colored(f"Response\n{response}", "magenta"))
+
+        if commands is not None:
+            self.execute_commands(commands)
 
     def auto_command_mode(self, user_prompt):
         commands = self.openai_helper.get_commands(
@@ -279,29 +284,23 @@ class Application:
             print(colored("No commands found", "red"))
 
     def execute_commands(self, commands):
-        commands = commands["commands"]
         outputs = []
         while commands is not None:
             for command in commands:
                 print(colored(f"{command}", "blue"))
 
-                action = self.session.prompt(ANSI(
+                action = prompt(ANSI(
                     colored(f"Do you want to run (y) or edit (e) the command? (y/e/N): ", "green")))
 
                 if action.lower() == "e":
                     command = self.session.prompt(ANSI(
                         colored("Enter the modified command: ", "cyan")), default=command)
-                    action = self.session.prompt(ANSI(
+                    action = prompt(ANSI(
                         colored(f"Do you want to run the command? (y/N): ", "green")))
 
                 if action.lower() == "y":
                     output = self.command_helper.run_shell_command(command)
                     outputs.append(output)
-                    # prompt = self.generate_prompt(command, command_output)
-
-                    # chatbot_reply = self.openai_helper.request_chatbot_response(
-                    #     prompt)
-                    # self.print_chatbot_response(chatbot_reply)
                 else:
                     print(colored("Skipping command", "yellow"))
                     break
