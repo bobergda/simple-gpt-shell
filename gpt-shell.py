@@ -15,7 +15,10 @@ import ast
 
 
 class OpenAIHelper:
+    """A class that handles the OpenAI API calls."""
+
     def __init__(self, model_name="gpt-3.5-turbo", max_tokens=4096):
+        """Initializes the OpenAIHelper class."""
         self.api_key = os.getenv("OPENAI_API_KEY", "")
         if self.api_key == "":
             print(colored("Error: OPENAI_API_KEY is not set", "red"), file=sys.stderr)
@@ -51,6 +54,7 @@ class OpenAIHelper:
         ]
 
     def get_model_for_encoding(self, model: str):
+        """Returns the number of tokens used by a list of messages."""
         if "gpt-3.5-turbo" in model:
             self.tokens_per_message = 4
             self.tokens_per_name = -1  # if there's a name, the role is omitted
@@ -105,6 +109,7 @@ class OpenAIHelper:
         return outputs
 
     def truncate_chat_message(self):
+        """Truncates the chat message list so that the total tokens fit the max_tokens limit."""
         chat_message_tokens = self.get_chat_message_tokens()
         print(colored(
             f"before truncate_chat_message() chat message tokens: {chat_message_tokens}", "green"))
@@ -118,6 +123,7 @@ class OpenAIHelper:
                 break
 
     def get_commands(self, prompt):
+        """Returns a list of commands to be executed."""
         user_message = {"role": "user", "content": prompt}
         self.chat_messages.append(user_message)
 
@@ -155,6 +161,7 @@ class OpenAIHelper:
         return commands
 
     def send_commands_outputs(self, outputs):
+        """Returns a list of commands to be executed."""
         outputs = self.truncate_outputs(outputs)
 
         outputs = json.dumps(outputs)
@@ -205,6 +212,8 @@ class OpenAIHelper:
 
 
 class CommandHelper:
+    """Helper class for executing commands."""
+
     @staticmethod
     def run_shell_command(command):
         process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE,
@@ -237,8 +246,11 @@ class CommandHelper:
 
 
 class OSHelper:
+    """Helper class for getting OS and shell information."""
+
     @staticmethod
     def get_os_and_shell_info():
+        """Returns the OS and shell information."""
         os_name = platform.system()
         shell_name = os.path.basename(os.environ.get("SHELL", ""))
         if os_name == "Linux":
@@ -251,19 +263,24 @@ class OSHelper:
 
 
 class Application:
+    """Main application class."""
+
     def __init__(self, openai_helper: OpenAIHelper, command_helper: CommandHelper):
+        """Initializes the application."""
         self.openai_helper = openai_helper
         self.command_helper = command_helper
         self.session = PromptSession(history=FileHistory(os.path.expanduser(
             '~') + "/.gpts_history"), auto_suggest=AutoSuggestFromHistory())
 
     def interpret_and_execute_command(self, user_prompt):
+        """Interprets and executes the command."""
         if user_prompt == "e":
             self.manual_command_mode()
         else:
             self.auto_command_mode(user_prompt)
 
     def manual_command_mode(self):
+        """Manual command mode."""
         print(colored("Manual command mode activated. Please enter your command:", "green"))
         command_str = self.session.prompt("")
         command_output = self.command_helper.run_shell_command(command_str)
@@ -276,6 +293,7 @@ class Application:
             self.execute_commands(commands)
 
     def auto_command_mode(self, user_prompt):
+        """Auto command mode."""
         commands = self.openai_helper.get_commands(
             user_prompt)
         if commands is not None:
@@ -284,6 +302,7 @@ class Application:
             print(colored("No commands found", "red"))
 
     def execute_commands(self, commands):
+        """Executes the commands."""
         outputs = []
         while commands is not None:
             for command in commands:
@@ -311,6 +330,7 @@ class Application:
                 print(colored(f"Response\n{response}", "magenta"))
 
     def run(self):
+        """Runs the application."""
         os_name, shell_name = OSHelper.get_os_and_shell_info()
         print(
             colored(f"Your current environment: Shell={shell_name}, OS={os_name}", "green"))
@@ -338,6 +358,7 @@ class Application:
 
 
 if __name__ == "__main__":
+    """Main entry point."""
     openai_helper = OpenAIHelper(  # model_name="gpt-3.5-turbo"
         model_name="gpt-3.5-turbo-0613"
     )
