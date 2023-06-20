@@ -30,6 +30,27 @@ class OpenAIHelper:
         self.get_model_for_encoding(model_name)
         self.os_name, self.shell_name = OSHelper.get_os_and_shell_info()
 
+        self.functions = [
+            {
+                "name": "get_commands",
+                "description": f"Get a list of {self.shell_name} commands on an {self.os_name} machine",
+                "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "commands": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "description": "A terminal command string"
+                                },
+                                "description": "List of terminal command strings to be executed"
+                            }
+                        },
+                    "required": ["commands"]
+                }
+            }
+        ]
+
     def get_model_for_encoding(self, model: str):
         if "gpt-3.5-turbo" in model:
             # model = "gpt-3.5-turbo-0301"
@@ -57,7 +78,7 @@ class OpenAIHelper:
             num_tokens += self.tokens_per_message
             for key, value in message.items():
                 if key == "name":
-                    num_tokens += self.tokens_per_name                
+                    num_tokens += self.tokens_per_name
                 if value is None:
                     continue
                 if type(value) == dict:
@@ -106,26 +127,7 @@ class OpenAIHelper:
         response = openai.ChatCompletion.create(
             model=self.model_name,
             messages=self.chat_messages,
-            functions=[
-                {
-                    "name": "get_commands",
-                    "description": f"Get a list of {self.shell_name} commands on an {self.os_name} machine",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "commands": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string",
-                                    "description": "A terminal command string"
-                                },
-                                "description": "List of terminal command strings to be executed"
-                            }
-                        },
-                        "required": ["commands"]
-                    }
-                }
-            ],
+            functions=self.functions,
             function_call={"name": "get_commands"},
         )
 
@@ -141,7 +143,8 @@ class OpenAIHelper:
 
                     if function_name == "get_commands":
                         message_to_add = response_message.to_dict()
-                        message_to_add["function_call"] = response_message["function_call"].to_dict()
+                        message_to_add["function_call"] = response_message["function_call"].to_dict(
+                        )
                         self.chat_messages.append(message_to_add)
                         commands = json.loads(
                             response_message["function_call"]["arguments"])
@@ -164,20 +167,38 @@ class OpenAIHelper:
         response = openai.ChatCompletion.create(
             model=self.model_name,
             messages=self.chat_messages,
+            functions=self.functions,
+            function_call='auto',
         )
 
         response_content = None
+        commands = None
         if response is not None:
             if isinstance(response, dict):
                 self.remaning_tokens = self.max_tokens - \
                     response['usage']['total_tokens']
-                
+
                 response_message = response['choices'][0].message
                 response_message = response_message.to_dict()
                 self.chat_messages.append(response_message)
 
                 response_content = response_message['content']
-        return response_content
+
+                if response_message.get("function_call"):
+                    function_name = response_message["function_call"]["name"]
+
+                    if function_name == "get_commands":
+                        message_to_add = response_message.to_dict()
+                        message_to_add["function_call"] = response_message["function_call"].to_dict(
+                        )
+                        self.chat_messages.append(message_to_add)
+                        commands = json.loads(
+                            response_message["function_call"]["arguments"])
+                    else:
+                        print(colored(
+                            f"Warning: function {function_name} is not implemented.", "yellow"))
+
+        return response_content, commands
 
 
 class CommandHelper:
@@ -253,40 +274,42 @@ class Application:
         commands = self.openai_helper.get_commands(
             user_prompt)
         if commands is not None:
-            self.execute_commands_in_chatbot_response(commands)
+            self.execute_commands(commands)
         else:
             print(colored("No commands found", "red"))
 
-    def execute_commands_in_chatbot_response(self, commands):
+    def execute_commands(self, commands):
         commands = commands["commands"]
         outputs = []
-        for command in commands:
-            print(colored(f"{command}", "blue"))
+        while commands is not None:
+            for command in commands:
+                print(colored(f"{command}", "blue"))
 
-            action = self.session.prompt(ANSI(
-                colored(f"Do you want to run (y) or edit (e) the command? (y/e/N): ", "green")))
-
-            if action.lower() == "e":
-                command = self.session.prompt(ANSI(
-                    colored("Enter the modified command: ", "cyan")), default=command)
                 action = self.session.prompt(ANSI(
-                    colored(f"Do you want to run the command? (y/N): ", "green")))
+                    colored(f"Do you want to run (y) or edit (e) the command? (y/e/N): ", "green")))
 
-            if action.lower() == "y":
-                output = self.command_helper.run_shell_command(command)
-                outputs.append(output)
-                # prompt = self.generate_prompt(command, command_output)
+                if action.lower() == "e":
+                    command = self.session.prompt(ANSI(
+                        colored("Enter the modified command: ", "cyan")), default=command)
+                    action = self.session.prompt(ANSI(
+                        colored(f"Do you want to run the command? (y/N): ", "green")))
 
-                # chatbot_reply = self.openai_helper.request_chatbot_response(
-                #     prompt)
-                # self.print_chatbot_response(chatbot_reply)
-            else:
-                print(colored("Skipping command", "yellow"))
-                break
+                if action.lower() == "y":
+                    output = self.command_helper.run_shell_command(command)
+                    outputs.append(output)
+                    # prompt = self.generate_prompt(command, command_output)
 
-        if len(outputs) > 0:
-            response = self.openai_helper.send_commands_outputs(outputs)
-            print(colored(f"Response\n{response}", "magenta"))
+                    # chatbot_reply = self.openai_helper.request_chatbot_response(
+                    #     prompt)
+                    # self.print_chatbot_response(chatbot_reply)
+                else:
+                    print(colored("Skipping command", "yellow"))
+                    break
+
+            if len(outputs) > 0:
+                response, commands = self.openai_helper.send_commands_outputs(
+                    outputs)
+                print(colored(f"Response\n{response}", "magenta"))
 
     def run(self):
         os_name, shell_name = OSHelper.get_os_and_shell_info()
