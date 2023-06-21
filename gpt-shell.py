@@ -92,7 +92,7 @@ class OpenAIHelper:
 
     def truncate_outputs(self, outputs):
         """Truncates the outputs list so that the total tokens fit the max_tokens limit."""
-        max_tokens = self.max_tokens - 512
+        max_tokens = self.max_tokens - 600
         outputs_tokens = []
         total_tokens = 0
         for i in range(len(outputs)):
@@ -153,7 +153,7 @@ class OpenAIHelper:
 
     def truncate_chat_message(self):
         """Truncates the chat message list so that the total tokens fit the max_tokens limit."""
-        max_tokens = self.max_tokens - 256
+        max_tokens = self.max_tokens - 400
         all_message_tokens = self.get_all_message_tokens()
         # print(colored(
         #     f"on start truncate_chat_message() all message tokens: {all_message_tokens}", "green"))
@@ -251,7 +251,7 @@ class OpenAIHelper:
                     function_name = response_message["function_call"]["name"]
 
                     if function_name == "get_commands":
-                        message_to_add = response_message.to_dict()
+                        message_to_add = response_message
                         message_to_add["function_call"] = response_message["function_call"].to_dict(
                         )
                         self.all_messages.append(message_to_add)
@@ -358,13 +358,15 @@ class Application:
     def execute_commands(self, commands):
         """Executes the commands."""
         outputs = []
+        action = ""
         while commands is not None:
             print(colored(f"List of commands {commands}", "magenta"))
             for command in commands:
                 print(colored(f"{command}", "blue"))
 
-                action = prompt(ANSI(
-                    colored(f"Do you want to run (y) or edit (e) the command? (y/e/N): ", "green")))
+                if action.lower() != "a":
+                    action = prompt(ANSI(
+                        colored(f"Do you want to run (y), edit (e), or execute all (a) commands? (y/e/a/N): ", "green")))
 
                 if action.lower() == "e":
                     command = self.session.prompt(ANSI(
@@ -372,7 +374,7 @@ class Application:
                     action = prompt(ANSI(
                         colored(f"Do you want to run the command? (y/N): ", "green")))
 
-                if action.lower() == "y":
+                if action.lower() in ["y", "a"]:
                     output = self.command_helper.run_shell_command(command)
                     outputs.append(output)
                 else:
@@ -384,6 +386,7 @@ class Application:
                     outputs)
                 print(colored(f"Response\n{response}", "magenta"))
                 outputs = []
+                action = ""
             else:
                 commands = None
 
