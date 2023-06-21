@@ -28,7 +28,7 @@ class OpenAIHelper:
         self.max_tokens = max_tokens
         self.remaning_tokens = max_tokens
         self.model_name = model_name
-        self.chat_messages = []
+        self.all_messages = []
         self.get_model_for_encoding(model_name)
         self.os_name, self.shell_name = OSHelper.get_os_and_shell_info()
 
@@ -71,10 +71,10 @@ class OpenAIHelper:
                 colored("Warning: model not found. Using cl100k_base encoding.", "yellow"))
             self.encoding = tiktoken.get_encoding("cl100k_base")
 
-    def get_chat_message_tokens(self):
+    def get_all_message_tokens(self):
         """Returns the number of tokens used by a list of messages."""
         num_tokens = 0
-        for message in self.chat_messages:
+        for message in self.all_messages:
             num_tokens += self.tokens_per_message
             for key, value in message.items():
                 if key == "name":
@@ -87,7 +87,7 @@ class OpenAIHelper:
                     continue
                 num_tokens += len(self.encoding.encode(value))
 
-        num_tokens += 2  # every reply is primed with <|start|>assistant<|message|>
+        num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
         return num_tokens
 
     def truncate_outputs(self, outputs):
@@ -124,39 +124,58 @@ class OpenAIHelper:
             total_tokens_half += tokens["total"]
             index_to_start_truncate += 1
 
+        remaining_tokens = total_tokens - total_tokens_half
+
         for i in range(index_to_start_truncate, len(outputs_tokens)):
-            if tokens_to_remove <= 0:
-                break
+            # count procent of remaining tokens
+            procent = outputs_tokens[i]["total"] / remaining_tokens
+            tokens_to_remove_in_this_iteration = int(
+                tokens_to_remove * procent)
+            print(colored(
+                f"procent: {procent} tokens: {outputs_tokens[i]['total']} remaining_tokens: {remaining_tokens} tokens_to_remove: {tokens_to_remove} tokens_to_remove_in_this_iteration: {tokens_to_remove_in_this_iteration}", "green"))
 
-            tokens = outputs_tokens[i]
+            if tokens_to_remove_in_this_iteration > 0:
+                tokens_to_remove -= tokens_to_remove_in_this_iteration
+                total_tokens -= tokens_to_remove_in_this_iteration
+                outputs_tokens[i]["stdout"] = outputs_tokens[i]["stdout"][:-
+                                                                          tokens_to_remove_in_this_iteration]
 
+                outputs_tokens[i]["total"] = len(outputs_tokens[i]["command"]) + \
+                    len(outputs_tokens[i]["stdout"]) + \
+                    len(outputs_tokens[i]["stderr"])
+
+                outputs[outputs_tokens[i]["index"]]["stdout"] = self.encoding.decode(
+                    outputs_tokens[i]["stdout"])
+        
+        print(colored(f"total_tokens: {total_tokens} max_tokens: {max_tokens} tokens_to_remove: {tokens_to_remove}", "green"))
         return outputs
 
     def truncate_chat_message(self):
         """Truncates the chat message list so that the total tokens fit the max_tokens limit."""
-        max_tokens = self.max_tokens - 512
-        chat_message_tokens = self.get_chat_message_tokens()
+        max_tokens = self.max_tokens - 300
+        all_message_tokens = self.get_all_message_tokens()
         print(colored(
-            f"before truncate_chat_message() chat message tokens: {chat_message_tokens}", "green"))
-        while chat_message_tokens > max_tokens:
+            f"on start truncate_chat_message() all message tokens: {all_message_tokens}", "green"))
+        
+        while all_message_tokens > max_tokens:
             try:
-                self.chat_messages.pop(0)
-                chat_message_tokens = self.get_chat_message_tokens()
-                print(colored(
-                    f"truncate_chat_message() chat message tokens: {chat_message_tokens}", "green"))
+                message = self.all_messages.pop(0)
+                all_message_tokens = self.get_all_message_tokens()
+                print(colored(f"all message tokens: {all_message_tokens} message: {message}", "green"))
             except IndexError:
                 break
+            pass
 
     def get_commands(self, prompt):
         """Returns a list of commands to be executed."""
-        user_message = {"role": "user", "content": prompt}
-        self.chat_messages.append(user_message)
+        message = {"role": "user", "content": prompt}
+        self.all_messages.append(message)
 
         self.truncate_chat_message()
 
         response = openai.ChatCompletion.create(
             model=self.model_name,
-            messages=self.chat_messages,
+            messages=self.all_messages,
             functions=self.functions,
             function_call={"name": "get_commands"},
         )
@@ -175,7 +194,7 @@ class OpenAIHelper:
                         message_to_add = response_message.to_dict()
                         message_to_add["function_call"] = response_message["function_call"].to_dict(
                         )
-                        self.chat_messages.append(message_to_add)
+                        self.all_messages.append(message_to_add)
                         commands = json.loads(
                             response_message["function_call"]["arguments"])
                         commands = commands["commands"]
@@ -194,13 +213,13 @@ class OpenAIHelper:
             "role": "function",
             "name": "get_commands",
             "content": outputs}
-        self.chat_messages.append(message)
+        self.all_messages.append(message)
 
         self.truncate_chat_message()
 
         response = openai.ChatCompletion.create(
             model=self.model_name,
-            messages=self.chat_messages,
+            messages=self.all_messages,
             functions=self.functions,
             function_call='auto',
         )
@@ -214,7 +233,7 @@ class OpenAIHelper:
 
                 response_message = response['choices'][0].message
                 response_message = response_message.to_dict()
-                self.chat_messages.append(response_message)
+                self.all_messages.append(response_message)
 
                 response_content = response_message['content']
 
@@ -225,7 +244,7 @@ class OpenAIHelper:
                         message_to_add = response_message.to_dict()
                         message_to_add["function_call"] = response_message["function_call"].to_dict(
                         )
-                        self.chat_messages.append(message_to_add)
+                        self.all_messages.append(message_to_add)
                         commands = json.loads(
                             response_message["function_call"]["arguments"])
                         commands = commands["commands"]
@@ -369,7 +388,7 @@ class Application:
         while True:
             try:
                 user_input = self.session.prompt(
-                    ANSI(colored(f"ChatGPT ({self.openai_helper.remaning_tokens}) ({self.openai_helper.max_tokens - self.openai_helper.get_chat_message_tokens()})app: ", "green")))
+                    ANSI(colored(f"ChatGPT ({self.openai_helper.remaning_tokens}) ({self.openai_helper.max_tokens - self.openai_helper.get_all_message_tokens()})app: ", "green")))
                 if user_input.lower() == 'q':
                     break
                 self.interpret_and_execute_command(user_input)
