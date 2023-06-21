@@ -92,7 +92,7 @@ class OpenAIHelper:
 
     def truncate_outputs(self, outputs):
         """Truncates the outputs list so that the total tokens fit the max_tokens limit."""
-        max_tokens = self.max_tokens - 512
+        max_tokens = self.max_tokens - 1024
         outputs_tokens = []
         total_tokens = 0
         for i in range(len(outputs)):
@@ -131,8 +131,8 @@ class OpenAIHelper:
             procent = outputs_tokens[i]["total"] / remaining_tokens
             tokens_to_remove_in_this_iteration = int(
                 tokens_to_remove * procent)
-            print(colored(
-                f"procent: {procent} tokens: {outputs_tokens[i]['total']} remaining_tokens: {remaining_tokens} tokens_to_remove: {tokens_to_remove} tokens_to_remove_in_this_iteration: {tokens_to_remove_in_this_iteration}", "green"))
+            # print(colored(
+            #     f"procent: {procent} tokens: {outputs_tokens[i]['total']} remaining_tokens: {remaining_tokens} tokens_to_remove: {tokens_to_remove} tokens_to_remove_in_this_iteration: {tokens_to_remove_in_this_iteration}", "green"))
 
             if tokens_to_remove_in_this_iteration > 0:
                 tokens_to_remove -= tokens_to_remove_in_this_iteration
@@ -146,29 +146,33 @@ class OpenAIHelper:
 
                 outputs[outputs_tokens[i]["index"]]["stdout"] = self.encoding.decode(
                     outputs_tokens[i]["stdout"])
-        
-        print(colored(f"total_tokens: {total_tokens} max_tokens: {max_tokens} tokens_to_remove: {tokens_to_remove}", "green"))
+
+        # print(colored(
+        #     f"total_tokens: {total_tokens} max_tokens: {max_tokens} tokens_to_remove: {tokens_to_remove}", "green"))
         return outputs
 
     def truncate_chat_message(self):
         """Truncates the chat message list so that the total tokens fit the max_tokens limit."""
-        max_tokens = self.max_tokens - 300
+        max_tokens = self.max_tokens - 512
         all_message_tokens = self.get_all_message_tokens()
-        print(colored(
-            f"on start truncate_chat_message() all message tokens: {all_message_tokens}", "green"))
-        
+        # print(colored(
+        #     f"on start truncate_chat_message() all message tokens: {all_message_tokens}", "green"))
+
         while all_message_tokens > max_tokens:
             try:
                 message = self.all_messages.pop(0)
                 all_message_tokens = self.get_all_message_tokens()
-                print(colored(f"all message tokens: {all_message_tokens} message: {message}", "green"))
+                # print(colored(
+                #     f"all message tokens: {all_message_tokens} message: {message}", "green"))
             except IndexError:
                 break
             pass
 
     def get_commands(self, prompt):
         """Returns a list of commands to be executed."""
-        message = {"role": "user", "content": prompt}
+        message = {
+            "role": "user",
+            "content": prompt}
         self.all_messages.append(message)
 
         self.truncate_chat_message()
@@ -213,6 +217,12 @@ class OpenAIHelper:
             "role": "function",
             "name": "get_commands",
             "content": outputs}
+        self.all_messages.append(message)
+
+        prompt = "Explain the result in detail. Execute the function if necessary to fix errors and get more information."
+        message = {
+            "role": "user",
+            "content": prompt}
         self.all_messages.append(message)
 
         self.truncate_chat_message()
@@ -388,7 +398,7 @@ class Application:
         while True:
             try:
                 user_input = self.session.prompt(
-                    ANSI(colored(f"ChatGPT ({self.openai_helper.remaning_tokens}) ({self.openai_helper.max_tokens - self.openai_helper.get_all_message_tokens()})app: ", "green")))
+                    ANSI(colored(f"ChatGPT ({self.openai_helper.remaning_tokens}): ", "green")))
                 if user_input.lower() == 'q':
                     break
                 self.interpret_and_execute_command(user_input)
