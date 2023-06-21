@@ -92,28 +92,53 @@ class OpenAIHelper:
 
     def truncate_outputs(self, outputs):
         """Truncates the outputs list so that the total tokens fit the max_tokens limit."""
-        # outputs_with_tokens = [(i, self.encoding.encode(output))
-        #                        for i, output in enumerate(outputs)]
-        # # Sort by the length of tokens
-        # outputs_with_tokens.sort(key=lambda x: len(x[1]), reverse=True)
+        max_tokens = self.max_tokens - 512
+        outputs_tokens = []
+        total_tokens = 0
+        for i in range(len(outputs)):
+            tokens = {"index": i,
+                      "command": self.encoding.encode(outputs[i]["command"]),
+                      "stdout": self.encoding.encode(outputs[i]["stdout"]),
+                      "stderr": self.encoding.encode(outputs[i]["stderr"])}
 
-        # total_tokens = sum(len(tokens) for _, tokens in outputs_with_tokens)
-        # for index, tokens in outputs_with_tokens:
-        #     if total_tokens <= self.max_tokens:
-        #         break
-        #     total_tokens -= len(tokens)
-        #     outputs[index] = ''
-        #     print(colored(
-        #         f"Warning: output was removed to fit the {self.max_tokens} tokens limit.\n", "yellow"))
+            tokens["total"] = len(tokens["command"]) + \
+                len(tokens["stdout"]) + len(tokens["stderr"])
+            total_tokens += tokens["total"]
+
+            outputs_tokens.append(tokens)
+
+        if total_tokens <= max_tokens:
+            return outputs
+        tokens_to_remove = total_tokens - max_tokens
+
+        # Sort by the length of tokens in ascending order
+        outputs_tokens.sort(key=lambda x: x["total"])
+
+        half_max_tokens = max_tokens // 2
+        total_tokens_half = 0
+        index_to_start_truncate = 0
+
+        for tokens in outputs_tokens:
+            if total_tokens_half + tokens["total"] > half_max_tokens:
+                break
+            total_tokens_half += tokens["total"]
+            index_to_start_truncate += 1
+
+        for i in range(index_to_start_truncate, len(outputs_tokens)):
+            if tokens_to_remove <= 0:
+                break
+
+            tokens = outputs_tokens[i]
 
         return outputs
 
     def truncate_chat_message(self):
         """Truncates the chat message list so that the total tokens fit the max_tokens limit."""
+        max_tokens = self.max_tokens - 512
         chat_message_tokens = self.get_chat_message_tokens()
         print(colored(
             f"before truncate_chat_message() chat message tokens: {chat_message_tokens}", "green"))
-        while chat_message_tokens > self.max_tokens - 512:
+        while chat_message_tokens > max_tokens:
             try:
                 self.chat_messages.pop(0)
                 chat_message_tokens = self.get_chat_message_tokens()
@@ -231,18 +256,18 @@ class CommandHelper:
 
         process.wait()
 
-        result = {"command": command, "stdout": ''.join(
+        output = {"command": command, "stdout": ''.join(
             stdout), "stderr": stderr_data}
 
-        if result["stdout"] != "":
-            stdout_lines = result["stdout"].split("\n")
+        if output["stdout"] != "":
+            stdout_lines = output["stdout"].split("\n")
             for i, line in enumerate(stdout_lines):
                 if "KEY" in line:
                     post_key_content = line[line.find("KEY") + 3:].strip()
                     if "=" in post_key_content:
                         stdout_lines[i] = line.split("=")[0] + "=<API_KEY>"
-            result["stdout"] = "\n".join(stdout_lines)
-        return result
+            output["stdout"] = "\n".join(stdout_lines)
+        return output
 
 
 class OSHelper:
@@ -305,6 +330,7 @@ class Application:
         """Executes the commands."""
         outputs = []
         while commands is not None:
+            print(colored(f"List of commands {commands}", "magenta"))
             for command in commands:
                 print(colored(f"{command}", "blue"))
 
@@ -328,6 +354,9 @@ class Application:
                 response, commands = self.openai_helper.send_commands_outputs(
                     outputs)
                 print(colored(f"Response\n{response}", "magenta"))
+                outputs = []
+            else:
+                commands = None
 
     def run(self):
         """Runs the application."""
