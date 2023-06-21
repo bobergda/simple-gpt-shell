@@ -92,7 +92,7 @@ class OpenAIHelper:
 
     def truncate_outputs(self, outputs):
         """Truncates the outputs list so that the total tokens fit the max_tokens limit."""
-        max_tokens = self.max_tokens - 1024
+        max_tokens = self.max_tokens - 512
         outputs_tokens = []
         total_tokens = 0
         for i in range(len(outputs)):
@@ -153,7 +153,7 @@ class OpenAIHelper:
 
     def truncate_chat_message(self):
         """Truncates the chat message list so that the total tokens fit the max_tokens limit."""
-        max_tokens = self.max_tokens - 512
+        max_tokens = self.max_tokens - 256
         all_message_tokens = self.get_all_message_tokens()
         # print(colored(
         #     f"on start truncate_chat_message() all message tokens: {all_message_tokens}", "green"))
@@ -219,7 +219,7 @@ class OpenAIHelper:
             "content": outputs}
         self.all_messages.append(message)
 
-        prompt = "Explain the result in detail. Execute the function if necessary to fix errors and get more information."
+        prompt = "Explain the result in detail. Run functions if needed."
         message = {
             "role": "user",
             "content": prompt}
