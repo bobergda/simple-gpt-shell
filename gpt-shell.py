@@ -412,9 +412,9 @@ class Application:
                 continue
             except EOFError:
                 break
-            # except Exception as e:
-            #     print(
-            #         colored(f"Error of type {type(e).__name__}: {e}", "red"), file=sys.stderr)
+             except Exception as e:
+                 print(
+                     colored(f"Error of type {type(e).__name__}: {e}", "red"), file=sys.stderr)
         print(colored("Exiting...", "yellow"))
 
 
