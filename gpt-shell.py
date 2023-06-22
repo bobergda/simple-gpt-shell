@@ -11,7 +11,7 @@ import tiktoken
 from prompt_toolkit import ANSI, PromptSession, prompt
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-import ast
+#import ast
 
 
 class OpenAIHelper:
@@ -412,10 +412,10 @@ class Application:
                 continue
             except EOFError:
                 break
-             except Exception as e:
-                 print(
-                     colored(f"Error of type {type(e).__name__}: {e}", "red"), file=sys.stderr)
-        print(colored("Exiting...", "yellow"))
+            except Exception as e:
+                print(
+                    colored(f"Error of type {type(e).__name__}: {e}", "red"), file=sys.stderr)
+                print(colored("Exiting...", "yellow"))
 
 
 if __name__ == "__main__":
