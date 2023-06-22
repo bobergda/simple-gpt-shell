@@ -36,17 +36,31 @@ class OpenAIHelper:
                 "name": "get_commands",
                 "description": f"Get a list of {self.shell_name} commands on an {self.os_name} machine",
                 "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "commands": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string",
-                                    "description": "A terminal command string"
+                    "type": "object",
+                    "properties": {
+                        "commands": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "command": {
+                                        "type": "string",
+                                        "description": "A terminal command string"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "description": "Description of the command"
+                                    }
                                 },
-                                "description": "List of terminal command strings to be executed"
-                            }
+                                "required": ["command"]
+                            },
+                            "description": "List of terminal command objects to be executed"
                         },
+                        "response": {
+                            "type": "string",
+                            "description": "Give me a detailed description of what you want to do",
+                        }
+                    },
                     "required": ["commands"]
                 }
             }
