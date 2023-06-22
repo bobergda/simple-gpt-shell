@@ -11,7 +11,6 @@ import tiktoken
 from prompt_toolkit import ANSI, PromptSession, prompt
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-#import ast
 
 
 class OpenAIHelper:
