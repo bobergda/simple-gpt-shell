@@ -45,7 +45,7 @@ class OpenAIHelper:
                                 "properties": {
                                     "command": {
                                         "type": "string",
-                                        "description": "A terminal command string"
+                                        "description": "A valid command string"
                                     },
                                     "description": {
                                         "type": "string",
@@ -198,6 +198,7 @@ class OpenAIHelper:
         )
 
         commands = None
+        response_description = None
         if response is not None:
             if isinstance(response, dict):
                 self.remaning_tokens = self.max_tokens - \
@@ -215,7 +216,8 @@ class OpenAIHelper:
                         arguments = json.loads(
                             response_message["function_call"]["arguments"])
                         commands = arguments["commands"]
-                        response_description = arguments["response"]
+                        if "response" in arguments:
+                            response_description = arguments["response"]
                     else:
                         print(colored(
                             f"Warning: function {function_name} is not implemented.", "yellow"))
@@ -364,7 +366,8 @@ class Application:
         """Auto command mode."""
         commands, response_description = self.openai_helper.get_commands(
             user_prompt)
-        print(colored(f"{response_description}\n", "magenta"))
+        if response_description is not None:
+            print(colored(f"{response_description}\n", "magenta"))
         if commands is not None:
             self.execute_commands(commands)
         else:
@@ -397,12 +400,12 @@ class Application:
                     outputs.append(output)
                 else:
                     print(colored("Skipping command", "yellow"))
-                    break
+                    # break
 
             if len(outputs) > 0:
                 response, commands = self.openai_helper.send_commands_outputs(
                     outputs)
-                print(colored(f"Response\n{response}", "magenta"))
+                print(colored(f"{response}", "magenta"))
                 outputs = []
                 action = ""
             else:
