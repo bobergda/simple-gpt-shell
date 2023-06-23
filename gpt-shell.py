@@ -212,14 +212,15 @@ class OpenAIHelper:
                         message_to_add["function_call"] = response_message["function_call"].to_dict(
                         )
                         self.all_messages.append(message_to_add)
-                        commands = json.loads(
+                        arguments = json.loads(
                             response_message["function_call"]["arguments"])
-                        commands = commands["commands"]
+                        commands = arguments["commands"]
+                        response_description = arguments["response"]
                     else:
                         print(colored(
                             f"Warning: function {function_name} is not implemented.", "yellow"))
 
-        return commands
+        return commands, response_description
 
     def send_commands_outputs(self, outputs):
         """Returns a list of commands to be executed."""
@@ -268,9 +269,9 @@ class OpenAIHelper:
                         message_to_add["function_call"] = response_message["function_call"].to_dict(
                         )
                         self.all_messages.append(message_to_add)
-                        commands = json.loads(
+                        arguments = json.loads(
                             response_message["function_call"]["arguments"])
-                        commands = commands["commands"]
+                        commands = arguments["commands"]
                     else:
                         print(colored(
                             f"Warning: function {function_name} is not implemented.", "yellow"))
@@ -354,15 +355,16 @@ class Application:
         outputs = [command_output]
 
         response, commands = self.openai_helper.send_commands_outputs(outputs)
-        print(colored(f"Response\n{response}", "magenta"))
+        print(colored(f"{response}", "magenta"))
 
         if commands is not None:
             self.execute_commands(commands)
 
     def auto_command_mode(self, user_prompt):
         """Auto command mode."""
-        commands = self.openai_helper.get_commands(
+        commands, response_description = self.openai_helper.get_commands(
             user_prompt)
+        print(colored(f"{response_description}\n", "magenta"))
         if commands is not None:
             self.execute_commands(commands)
         else:
@@ -373,22 +375,25 @@ class Application:
         outputs = []
         action = ""
         while commands is not None:
-            print(colored(f"List of commands {commands}", "magenta"))
+            commands_list = [command["command"] for command in commands]
+            print(colored(f"List of commands {commands_list}", "magenta"))
             for command in commands:
-                print(colored(f"{command}", "blue"))
+                command_str = command["command"]
+                print(colored(f"{command['description']}", "magenta"))
+                print(colored(f"{command_str}", "blue"))
 
                 if action.lower() != "a":
                     action = prompt(ANSI(
                         colored(f"Do you want to run (y), edit (e), or execute all (a) commands? (y/e/a/N): ", "green")))
 
                 if action.lower() == "e":
-                    command = self.session.prompt(ANSI(
-                        colored("Enter the modified command: ", "cyan")), default=command)
+                    command_str = self.session.prompt(ANSI(
+                        colored("Enter the modified command: ", "cyan")), default=command_str)
                     action = prompt(ANSI(
                         colored(f"Do you want to run the command? (y/N): ", "green")))
 
                 if action.lower() in ["y", "a"]:
-                    output = self.command_helper.run_shell_command(command)
+                    output = self.command_helper.run_shell_command(command_str)
                     outputs.append(output)
                 else:
                     print(colored("Skipping command", "yellow"))
