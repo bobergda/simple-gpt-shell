@@ -105,7 +105,7 @@ class OpenAIHelper:
 
     def truncate_outputs(self, outputs):
         """Truncates the outputs list so that the total tokens fit the max_tokens limit."""
-        max_tokens = self.max_tokens - 600
+        max_tokens = self.max_tokens - self.max_tokens // 2
         outputs_tokens = []
         total_tokens = 0
         for i in range(len(outputs)):
@@ -442,7 +442,8 @@ class Application:
 if __name__ == "__main__":
     """Main entry point."""
     openai_helper = OpenAIHelper(  # model_name="gpt-3.5-turbo"
-        model_name="gpt-3.5-turbo-0613"
+        model_name="gpt-3.5-turbo-16k-0613",
+        max_tokens=16 * 1024
     )
     command_helper = CommandHelper()
     application = Application(openai_helper, command_helper)
