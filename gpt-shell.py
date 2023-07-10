@@ -61,7 +61,7 @@ class OpenAIHelper:
                             "description": "Give me a detailed description of what you want to do",
                         }
                     },
-                    "required": ["commands"]
+                    "required": ["commands", "response"]
                 }
             }
         ]
@@ -235,7 +235,7 @@ class OpenAIHelper:
             "content": outputs}
         self.all_messages.append(message)
 
-        prompt = "Explain the result in detail. Run functions if needed."
+        prompt = "Explain the result in detail."
         message = {
             "role": "user",
             "content": prompt}
