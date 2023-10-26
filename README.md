@@ -9,8 +9,6 @@ The script also employs effective token management, truncating the chat history 
 
 ![Screen 1](screen1.png "Screen 1")
 
-[![Wideo](https://img.youtube.com/vi/dNrxlJfLHkQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=dNrxlJfLHkQ)
-
 ## Installation
 
 1. Clone the repository to your local machine.
