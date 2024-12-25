@@ -204,14 +204,13 @@ class OpenAIHelper:
                 self.remaning_tokens = self.max_tokens - \
                     response['usage']['total_tokens']
 
-                response_message = response['choices'][0].message
+                response_message = response['choices'][0]['message']
                 if response_message.get("function_call"):
                     function_name = response_message["function_call"]["name"]
 
                     if function_name == "get_commands":
-                        message_to_add = response_message.to_dict()
-                        message_to_add["function_call"] = response_message["function_call"].to_dict(
-                        )
+                        message_to_add = response_message
+                        message_to_add["function_call"] = response_message["function_call"]
                         self.all_messages.append(message_to_add)
                         arguments = json.loads(
                             response_message["function_call"]["arguments"])
@@ -257,8 +256,8 @@ class OpenAIHelper:
                 self.remaning_tokens = self.max_tokens - \
                     response['usage']['total_tokens']
 
-                response_message = response['choices'][0].message
-                response_message = response_message.to_dict()
+                response_message = response['choices'][0]['message']
+                response_message = response_message
                 self.all_messages.append(response_message)
 
                 response_content = response_message['content']
@@ -268,8 +267,7 @@ class OpenAIHelper:
 
                     if function_name == "get_commands":
                         message_to_add = response_message
-                        message_to_add["function_call"] = response_message["function_call"].to_dict(
-                        )
+                        message_to_add["function_call"] = response_message["function_call"]
                         self.all_messages.append(message_to_add)
                         arguments = json.loads(
                             response_message["function_call"]["arguments"])
