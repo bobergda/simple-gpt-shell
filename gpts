@@ -1,0 +1,4 @@
+dir="/home/bober/gpt/simple-gpt-shell"
+#ls -l $dir/env_gpt/bin/activate
+. $dir/env_gpt/bin/activate
+python3 $dir/gpt-shell.py
