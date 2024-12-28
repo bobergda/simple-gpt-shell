@@ -28,7 +28,7 @@ class OpenAIHelper:
         self.remaning_tokens = max_tokens
         self.model_name = model_name
         self.all_messages = []
-        self.get_model_for_encoding(model_name)
+        self.set_model_for_encoding(model_name)
         self.os_name, self.shell_name = OSHelper.get_os_and_shell_info()
 
         self.tools = [
@@ -69,30 +69,33 @@ class OpenAIHelper:
             }
         ]
 
-    def get_model_for_encoding(self, model: str):
-        """
-        Configures encoding settings and token counts for a given model.
-
-        Args:
-            model (str): The name of the model.
-
-        Raises:
-            ValueError: If the model is not supported.
-        """
+    def set_model_for_encoding(self, model: str):
+        """Configures encoding settings and token counts for a given model."""
         try:
             # Token settings for known models
-            if "gpt-3.5-turbo" in model:
-                self.tokens_per_message = 4
-                self.tokens_per_name = -1  # If there's a name, the role is omitted.
-            elif "gpt-4" in model:
+            if model in {
+                "gpt-3.5-turbo-0125",
+                "gpt-4-0314",
+                "gpt-4-32k-0314",
+                "gpt-4-0613",
+                "gpt-4-32k-0613",
+                "gpt-4o-mini-2024-07-18",
+                "gpt-4o-2024-08-06"
+                }:
                 self.tokens_per_message = 3
                 self.tokens_per_name = 1
-            elif "gpt-4o" in model:
-                self.tokens_per_message = 6
-                self.tokens_per_name = 2
+            elif "gpt-3.5-turbo" in model:
+                print(colored("Warning: gpt-3.5-turbo may update over time. Returning num tokens assuming gpt-3.5-turbo-0125.", "yellow"))
+                self.set_model_for_encoding(model="gpt-3.5-turbo-0125")
             elif "gpt-4o-mini" in model:
-                self.tokens_per_message = 5
-                self.tokens_per_name = 1
+                print(colored("Warning: gpt-4o-mini may update over time. Returning num tokens assuming gpt-4o-mini-2024-07-18.", "yellow"))
+                self.set_model_for_encoding(model="gpt-4o-mini-2024-07-18")
+            elif "gpt-4o" in model:
+                print(colored("Warning: gpt-4o and gpt-4o-mini may update over time. Returning num tokens assuming gpt-4o-2024-08-06.", "yellow"))
+                self.set_model_for_encoding(model="gpt-4o-2024-08-06")
+            elif "gpt-4" in model:
+                print(colored("Warning: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.", "yellow"))
+                self.set_model_for_encoding(model="gpt-4-0613")
             else:
                 raise ValueError(f"Model {model} is not supported.")
 
@@ -259,7 +262,6 @@ class OpenAIHelper:
         outputs_json = json.dumps(outputs)
         tool_response_message = {
             "role": "tool",
-            "name": "get_commands",
             "content": outputs_json,
             "tool_call_id": self.last_tool_call_id if hasattr(self, 'last_tool_call_id') else None
         }
@@ -291,23 +293,37 @@ class OpenAIHelper:
             response_message = response.choices[0].message
             
             # Add the assistant's response to messages
-            self.all_messages.append({
+            assistant_message = {
                 "role": "assistant",
                 "content": response_message.content if response_message.content else None,
-                "tool_calls": [tool_call.model_dump() for tool_call in response_message.tool_calls] if response_message.tool_calls else None
-            })
-
-            # If there are tool calls, handle them
+            }
+            
             if response_message.tool_calls:
+                assistant_message["tool_calls"] = [tool_call.model_dump() for tool_call in response_message.tool_calls]
+                
+                # Handle tool calls and add tool response messages immediately
                 for tool_call in response_message.tool_calls:
                     self.last_tool_call_id = tool_call.id
-                    # Add tool response message
+                    tool_response = None
+                    
                     if tool_call.function.name == "get_commands":
                         commands = json.loads(tool_call.function.arguments)
-
+                        tool_response = json.dumps(commands)
+                    else:
+                        # For any unknown tool calls, respond with empty result
+                        tool_response = ""
+                        
+                    # Add a tool response message for each tool call
+                    self.all_messages.append({
+                        "role": "tool",
+                        "content": tool_response,
+                        "tool_call_id": tool_call.id,
+                        "name": tool_call.function.name
+                    })
+            
+            self.all_messages.append(assistant_message)
             response_content = response_message.content
             return response_content, commands
-
         except Exception as e:
             print(colored(f"Error: {e}", "red"), file=sys.stderr)
             return None
