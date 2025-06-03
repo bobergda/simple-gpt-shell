@@ -25,7 +25,7 @@ class OpenAIHelper:
         self.client = OpenAI(api_key=self.api_key)
 
         self.max_tokens = max_tokens
-        self.remaning_tokens = max_tokens
+        self.remaining_tokens = max_tokens
         self.model_name = model_name
         self.all_messages = []
         self.set_model_for_encoding(model_name)
@@ -465,7 +465,7 @@ class Application:
         while True:
             try:
                 user_input = self.session.prompt(
-                    ANSI(colored(f"ChatGPT ({self.openai_helper.remaning_tokens}): ", "green")))
+                    ANSI(colored(f"ChatGPT ({self.openai_helper.remaining_tokens}): ", "green")))
                 if user_input.lower() == 'q':
                     break
                 self.interpret_and_execute_command(user_input)
