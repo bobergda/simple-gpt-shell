@@ -1,364 +1,579 @@
 #!/usr/bin/env python3
 import json
 import os
+import re
 import subprocess
 import sys
-from openai import OpenAI
-from termcolor import colored
+import threading
 import platform
+from datetime import datetime, timezone
 import distro
-import tiktoken
-from prompt_toolkit import ANSI, PromptSession, prompt
+from openai import OpenAI
+from termcolor import colored as term_colored
+from prompt_toolkit import ANSI, PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
 
-class OpenAIHelper:
-    """A class that handles the OpenAI API calls."""
+# Built-in visual theme (no env-based color overrides).
+THEME_COLOR_MAP = {
+    "green": "cyan",     # prompts and general app info
+    "magenta": "white",  # assistant narrative text
+    "blue": "blue",      # command lines
+    "cyan": "cyan",
+    "yellow": "yellow",
+    "red": "red",
+    "white": "white",
+    "grey": "grey",
+}
 
-    def __init__(self, model_name="gpt-4", max_tokens=4096):
-        """Initializes the OpenAIHelper class."""
+THEME_ATTRS_MAP = {
+    "green": ["bold"],
+    "blue": ["bold"],
+}
+
+
+def colored(text, color=None, on_color=None, attrs=None):
+    mapped_color = color
+    if isinstance(color, str):
+        color_key = color.lower()
+        mapped_color = THEME_COLOR_MAP.get(color_key, color_key)
+        if attrs is None:
+            attrs = THEME_ATTRS_MAP.get(color_key)
+    return term_colored(text, mapped_color, on_color=on_color, attrs=attrs)
+
+
+class OpenAIHelper:
+    """A class that handles OpenAI Responses API calls."""
+
+    def __init__(self, model_name="gpt-4o-mini", max_output_tokens=1200, interaction_logger=None):
+        """Initialize OpenAI helper with server-side conversation memory."""
         self.api_key = os.getenv("OPENAI_API_KEY", "")
         if self.api_key == "":
             print(colored("Error: OPENAI_API_KEY is not set", "red"), file=sys.stderr)
             exit(1)
-        self.client = OpenAI(api_key=self.api_key)
 
-        self.max_tokens = max_tokens
-        self.remaining_tokens = max_tokens
+        self.client = OpenAI(api_key=self.api_key)
         self.model_name = model_name
-        self.all_messages = []
-        self.set_model_for_encoding(model_name)
+        self.max_output_tokens = max_output_tokens
+        self.last_response_id = None
+        self.interaction_logger = interaction_logger
+        self.last_usage_summary = None
+        self.session_usage_summary = self._empty_usage_summary()
+        self._active_usage_summary = None
+
         self.os_name, self.shell_name = OSHelper.get_os_and_shell_info()
+        self.instructions = (
+            "You are a shell command assistant. Prefer safe, idempotent commands first. "
+            "For any command proposal, return it through the get_commands function. "
+            "Include a short description for each command. "
+            "If no command is needed, return an empty commands list with a helpful response."
+        )
 
         self.tools = [
             {
                 "type": "function",
-                "function": {
-                    "name": "get_commands",
-                    "description": f"Get a list of {self.shell_name} commands on an {self.os_name} machine",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "commands": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "command": {
-                                            "type": "string",
-                                            "description": "A valid command string"
-                                        },
-                                        "description": {
-                                            "type": "string",
-                                            "description": "Description of the command"
-                                        }
+                "name": "get_commands",
+                "description": (
+                    f"Return a list of {self.shell_name} commands for an {self.os_name} machine"
+                ),
+                "strict": False,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "commands": {
+                            "type": "array",
+                            "description": "List of shell commands to execute",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "command": {
+                                        "type": "string",
+                                        "description": "A valid command string"
                                     },
-                                    "required": ["command"]
+                                    "description": {
+                                        "type": "string",
+                                        "description": "Description of the command"
+                                    }
                                 },
-                                "description": "List of terminal command objects to be executed"
+                                "required": ["command"],
+                                "additionalProperties": False
                             },
-                            "response": {
-                                "type": "string",
-                                "description": "Give me a detailed description of what you want to do",
-                            }
                         },
-                        "required": ["commands", "response"]
-                    }
-                }
+                        "response": {
+                            "type": "string",
+                            "description": "Human-readable explanation for the user"
+                        }
+                    },
+                    "required": ["commands", "response"],
+                    "additionalProperties": False
+                },
             }
         ]
 
-    def set_model_for_encoding(self, model: str):
-        """Configures encoding settings and token counts for a given model."""
+    @staticmethod
+    def _item_value(item, key, default=None):
+        if isinstance(item, dict):
+            return item.get(key, default)
+        return getattr(item, key, default)
+
+    @staticmethod
+    def _empty_usage_summary():
+        return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "api_calls": 0}
+
+    @staticmethod
+    def _safe_int(value):
         try:
-            # Token settings for known models
-            if model in {
-                "gpt-3.5-turbo-0125",
-                "gpt-4-0314",
-                "gpt-4-32k-0314",
-                "gpt-4-0613",
-                "gpt-4-32k-0613",
-                "gpt-4o-mini-2024-07-18",
-                "gpt-4o-2024-08-06"
-                }:
-                self.tokens_per_message = 3
-                self.tokens_per_name = 1
-            elif "gpt-3.5-turbo" in model:
-                print(colored("Warning: gpt-3.5-turbo may update over time. Returning num tokens assuming gpt-3.5-turbo-0125.", "yellow"))
-                self.set_model_for_encoding(model="gpt-3.5-turbo-0125")
-            elif "gpt-4o-mini" in model:
-                print(colored("Warning: gpt-4o-mini may update over time. Returning num tokens assuming gpt-4o-mini-2024-07-18.", "yellow"))
-                self.set_model_for_encoding(model="gpt-4o-mini-2024-07-18")
-            elif "gpt-4o" in model:
-                print(colored("Warning: gpt-4o and gpt-4o-mini may update over time. Returning num tokens assuming gpt-4o-2024-08-06.", "yellow"))
-                self.set_model_for_encoding(model="gpt-4o-2024-08-06")
-            elif "gpt-4" in model:
-                print(colored("Warning: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.", "yellow"))
-                self.set_model_for_encoding(model="gpt-4-0613")
-            else:
-                raise ValueError(f"Model {model} is not supported.")
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
 
-            # Attempt to fetch encoding for the model
-            self.encoding = tiktoken.encoding_for_model(model)
+    def _begin_usage_capture(self):
+        self._active_usage_summary = self._empty_usage_summary()
 
-        except ValueError as e:
-            print(colored(f"Error: {e}", "red"), file=sys.stderr)
-            raise
+    def _finish_usage_capture(self):
+        if self._active_usage_summary is None:
+            self.last_usage_summary = None
+        else:
+            self.last_usage_summary = dict(self._active_usage_summary)
+        self._active_usage_summary = None
+        return self.last_usage_summary
 
-        except KeyError:
-            print(colored(f"Warning: Model {model} not found. Using 'cl100k_base' encoding.", "yellow"))
-            self.encoding = tiktoken.get_encoding("cl100k_base")
-
-    def get_all_message_tokens(self):
-        """Returns the number of tokens used by a list of messages."""
-        num_tokens = 0
-        for message in self.all_messages:
-            num_tokens += self.tokens_per_message
-            for key, value in message.items():
-                if key == "name":
-                    num_tokens += self.tokens_per_name
-                if value is None:
-                    continue
-                if isinstance(value, dict):
-                    for k, v in value.items():
-                        if isinstance(v, str):
-                            num_tokens += len(self.encoding.encode(v))
-                    continue
-                if isinstance(value, list):
-                    for item in value:
-                        if isinstance(item, str):  # Encode each string item in the list
-                            num_tokens += len(self.encoding.encode(item))
-                elif isinstance(value, str):  # Encode only if it's a string
-                    num_tokens += len(self.encoding.encode(value))
-
-        num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
-        return num_tokens
-
-
-    def truncate_outputs(self, outputs):
-        """Truncates the outputs list so that the total tokens fit the max_tokens limit."""
-        max_tokens = self.max_tokens - self.max_tokens // 2
-        outputs_tokens = []
-        total_tokens = 0
-        for i in range(len(outputs)):
-            tokens = {"index": i,
-                      "command": self.encoding.encode(outputs[i]["command"]),
-                      "stdout": self.encoding.encode(outputs[i]["stdout"]),
-                      "stderr": self.encoding.encode(outputs[i]["stderr"])}
-
-            tokens["total"] = len(tokens["command"]) + \
-                len(tokens["stdout"]) + len(tokens["stderr"])
-            total_tokens += tokens["total"]
-
-            outputs_tokens.append(tokens)
-
-        if total_tokens <= max_tokens:
-            return outputs
-        tokens_to_remove = total_tokens - max_tokens
-
-        # Sort by the length of tokens in ascending order
-        outputs_tokens.sort(key=lambda x: x["total"])
-
-        half_max_tokens = max_tokens // 2
-        total_tokens_half = 0
-        index_to_start_truncate = 0
-
-        for tokens in outputs_tokens:
-            if total_tokens_half + tokens["total"] > half_max_tokens:
-                break
-            total_tokens_half += tokens["total"]
-            index_to_start_truncate += 1
-
-        remaining_tokens = total_tokens - total_tokens_half
-
-        for i in range(index_to_start_truncate, len(outputs_tokens)):
-            # count procent of remaining tokens
-            procent = outputs_tokens[i]["total"] / remaining_tokens
-            tokens_to_remove_in_this_iteration = int(
-                tokens_to_remove * procent)
-
-            if tokens_to_remove_in_this_iteration > 0:
-                tokens_to_remove -= tokens_to_remove_in_this_iteration
-                total_tokens -= tokens_to_remove_in_this_iteration
-                outputs_tokens[i]["stdout"] = outputs_tokens[i]["stdout"][:-
-                                                                          tokens_to_remove_in_this_iteration]
-
-                outputs_tokens[i]["total"] = len(outputs_tokens[i]["command"]) + \
-                    len(outputs_tokens[i]["stdout"]) + \
-                    len(outputs_tokens[i]["stderr"])
-
-                outputs[outputs_tokens[i]["index"]]["stdout"] = self.encoding.decode(
-                    outputs_tokens[i]["stdout"])
-
-        return outputs
-
-    def truncate_chat_message(self):
-        """Truncates the chat message list so that the total tokens fit the max_tokens limit."""
-        max_tokens = self.max_tokens - 400
-        all_message_tokens = self.get_all_message_tokens()
-
-        while all_message_tokens > max_tokens:
-            try:
-                message = self.all_messages.pop(0)
-                all_message_tokens = self.get_all_message_tokens()
-            except IndexError:
-                break
-            pass
-
-    def get_commands(self, prompt):
-        """Returns a list of commands to be executed."""
-        message = {
-            "role": "user",
-            "content": prompt
+    def _extract_usage_summary(self, response):
+        usage = self._item_value(response, "usage")
+        if usage is None:
+            return self._empty_usage_summary()
+        return {
+            "input_tokens": self._safe_int(self._item_value(usage, "input_tokens", 0)),
+            "output_tokens": self._safe_int(self._item_value(usage, "output_tokens", 0)),
+            "total_tokens": self._safe_int(self._item_value(usage, "total_tokens", 0)),
+            "api_calls": 1,
         }
-        self.all_messages.append(message)
 
-        self.truncate_chat_message()
+    def _record_usage_summary(self, usage_summary):
+        if not isinstance(usage_summary, dict):
+            return
+        for key in ("input_tokens", "output_tokens", "total_tokens", "api_calls"):
+            self.session_usage_summary[key] += self._safe_int(usage_summary.get(key, 0))
+            if self._active_usage_summary is not None:
+                self._active_usage_summary[key] += self._safe_int(usage_summary.get(key, 0))
 
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=self.all_messages,
-            tools=self.tools,
-            tool_choice={"type": "function", "function": {"name": "get_commands"}},
+    def get_last_usage_summary(self):
+        if self.last_usage_summary is None:
+            return None
+        return dict(self.last_usage_summary)
+
+    def get_session_usage_summary(self):
+        return dict(self.session_usage_summary)
+
+    def _log_api_event(self, event_name, payload):
+        if self.interaction_logger is None:
+            return
+        self.interaction_logger.log_event(event_name, payload)
+
+    def _create_response(self, input_data, tool_choice="auto"):
+        request = {
+            "model": self.model_name,
+            "instructions": self.instructions,
+            "input": input_data,
+            "tools": self.tools,
+            "tool_choice": tool_choice,
+            "parallel_tool_calls": False,
+            "max_output_tokens": self.max_output_tokens,
+        }
+        if self.last_response_id is not None:
+            request["previous_response_id"] = self.last_response_id
+
+        self._log_api_event(
+            "api_request",
+            {
+                "model": request["model"],
+                "tool_choice": request["tool_choice"],
+                "has_previous_response_id": "previous_response_id" in request,
+                "input": input_data,
+            },
         )
 
-        commands = None
-        try:
-            response_message = response.choices[0].message
-            if response_message.tool_calls:
-                for tool_call in response_message.tool_calls:
-                    function_call = tool_call.function
-                    tool_call_id = tool_call.id
-
-                    # Append a tool response for each tool_call
-                    tool_response = {
-                        "role": "function",
-                        "name": function_call.name,
-                        "content": f"Tool response for {tool_call_id}",
-                    }
-                    self.all_messages.append(tool_response)
-
-                    commands = json.loads(function_call.arguments)
-
-                message = {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": response_message.tool_calls
+        response = self.client.responses.create(**request)
+        self.last_response_id = response.id
+        usage_summary = self._extract_usage_summary(response)
+        self._record_usage_summary(usage_summary)
+        output_items = []
+        for item in self._item_value(response, "output", []) or []:
+            output_items.append(
+                {
+                    "type": self._item_value(item, "type"),
+                    "id": self._item_value(item, "id"),
+                    "name": self._item_value(item, "name"),
+                    "call_id": self._item_value(item, "call_id"),
                 }
-                self.all_messages.append(message)
+            )
+        self._log_api_event(
+            "api_response",
+            {
+                "response_id": response.id,
+                "output_text": self._response_text(response),
+                "output_items": output_items,
+                "usage": usage_summary,
+            },
+        )
+        return response
+
+    def _extract_function_calls(self, response):
+        calls = []
+        for item in self._item_value(response, "output", []) or []:
+            if self._item_value(item, "type") != "function_call":
+                continue
+            call_id = self._item_value(item, "call_id") or self._item_value(item, "id")
+            calls.append({
+                "name": self._item_value(item, "name"),
+                "arguments": self._item_value(item, "arguments", "{}"),
+                "call_id": call_id,
+            })
+        return calls
+
+    @staticmethod
+    def _sanitize_commands_payload(payload):
+        if not isinstance(payload, dict):
+            return None
+
+        commands = payload.get("commands")
+        if not isinstance(commands, list):
+            return None
+
+        sanitized = []
+        for command in commands:
+            if not isinstance(command, dict):
+                continue
+            command_text = command.get("command")
+            if not isinstance(command_text, str) or command_text.strip() == "":
+                continue
+            description = command.get("description")
+            sanitized.append({
+                "command": command_text,
+                "description": description if isinstance(description, str) else "",
+            })
+
+        return {
+            "commands": sanitized,
+            "response": payload.get("response", "") if isinstance(payload.get("response", ""), str) else ""
+        }
+
+    @staticmethod
+    def _response_text(response):
+        text = getattr(response, "output_text", None)
+        return text.strip() if isinstance(text, str) and text.strip() else None
+
+    def _resolve_function_calls(self, response):
+        current_response = response
+        commands_payload = None
+
+        for _ in range(3):
+            calls = self._extract_function_calls(current_response)
+            if not calls:
+                break
+
+            outputs = []
+            for call in calls:
+                if call["name"] != "get_commands":
+                    if not call["call_id"]:
+                        continue
+                    outputs.append({
+                        "type": "function_call_output",
+                        "call_id": call["call_id"],
+                        "output": json.dumps({"status": "ignored", "reason": "Unsupported function"}),
+                    })
+                    continue
+
+                try:
+                    parsed = json.loads(call["arguments"])
+                    parsed = self._sanitize_commands_payload(parsed)
+                    if parsed is None:
+                        raise ValueError("Invalid get_commands payload")
+                    commands_payload = parsed
+                    self._log_api_event("get_commands_payload", parsed)
+                    if not call["call_id"]:
+                        continue
+                    outputs.append({
+                        "type": "function_call_output",
+                        "call_id": call["call_id"],
+                        "output": json.dumps({"status": "ok", "commands_count": len(parsed["commands"])}),
+                    })
+                except Exception as exc:
+                    if not call["call_id"]:
+                        continue
+                    outputs.append({
+                        "type": "function_call_output",
+                        "call_id": call["call_id"],
+                        "output": json.dumps({"status": "error", "error": str(exc)}),
+                    })
+
+            current_response = self._create_response(outputs, tool_choice="none")
+
+        return current_response, commands_payload
+
+    def get_commands(self, prompt):
+        """Return command suggestions using forced function calling."""
+        self._begin_usage_capture()
+        try:
+            response = self._create_response(
+                input_data=prompt,
+                tool_choice={"type": "function", "name": "get_commands"},
+            )
+            _, commands_payload = self._resolve_function_calls(response)
+            return commands_payload
         except Exception as e:
             print(colored(f"Error: {e}", "red"), file=sys.stderr)
             return None
+        finally:
+            self._finish_usage_capture()
 
-        return commands
-
-    def send_commands_outputs(self, outputs):
-        """Sends the outputs of executed commands back to OpenAI and retrieves the response."""
-        # Truncate outputs to fit within the token limit
-        outputs = self.truncate_outputs(outputs)
-
-        # Create a tool response message
-        outputs_json = json.dumps(outputs)
-        tool_response_message = {
-            "role": "tool",
-            "content": outputs_json,
-            "tool_call_id": self.last_tool_call_id if hasattr(self, 'last_tool_call_id') else None
+    def send_commands_outputs(self, outputs, execution_summary=None):
+        """Send command outputs for analysis and optional follow-up commands."""
+        self._begin_usage_capture()
+        execution_payload = {
+            "execution_summary": execution_summary if isinstance(execution_summary, list) else [],
+            "outputs": outputs if isinstance(outputs, list) else [],
         }
-        if hasattr(self, 'last_tool_call_id'):
-            self.all_messages.append(tool_response_message)
-
-        # Add a user prompt for detailed explanation
-        prompt_message = {
-            "role": "user",
-            "content": "Explain the result in detail."
-        }
-        self.all_messages.append(prompt_message)
-
-        # Truncate chat messages to fit token limits
-        self.truncate_chat_message()
+        execution_json = json.dumps(execution_payload, ensure_ascii=False)
+        prompt_text = (
+            "Analyze the following shell execution report and explain what happened. "
+            "If useful, propose next steps via get_commands. "
+            "If nothing was executed, clearly state that and do not propose follow-up commands.\n\n"
+            f"Execution report:\n{execution_json}"
+        )
 
         try:
-            # Send the updated conversation to the OpenAI API
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=self.all_messages,
-                tools=self.tools,
-                tool_choice='auto',
-            )
+            response = self._create_response(input_data=prompt_text, tool_choice="auto")
+            final_response, commands_payload = self._resolve_function_calls(response)
 
-            # Parse the response
-            response_content = None
-            commands = None
-            response_message = response.choices[0].message
-            
-            # Add the assistant's response to messages
-            assistant_message = {
-                "role": "assistant",
-                "content": response_message.content if response_message.content else None,
-            }
-            
-            if response_message.tool_calls:
-                assistant_message["tool_calls"] = [tool_call.model_dump() for tool_call in response_message.tool_calls]
-                
-                # Handle tool calls and add tool response messages immediately
-                for tool_call in response_message.tool_calls:
-                    self.last_tool_call_id = tool_call.id
-                    tool_response = None
-                    
-                    if tool_call.function.name == "get_commands":
-                        commands = json.loads(tool_call.function.arguments)
-                        tool_response = json.dumps(commands)
-                    else:
-                        # For any unknown tool calls, respond with empty result
-                        tool_response = ""
-                        
-                    # Add a tool response message for each tool call
-                    self.all_messages.append({
-                        "role": "tool",
-                        "content": tool_response,
-                        "tool_call_id": tool_call.id,
-                        "name": tool_call.function.name
-                    })
-            
-            self.all_messages.append(assistant_message)
-            response_content = response_message.content
-            return response_content, commands
+            response_text = self._response_text(final_response)
+            if response_text is None and commands_payload is not None:
+                response_text = commands_payload.get("response") or None
+
+            next_commands = None
+            if commands_payload is not None:
+                next_commands = commands_payload.get("commands") or None
+
+            return response_text, next_commands
         except Exception as e:
             print(colored(f"Error: {e}", "red"), file=sys.stderr)
-            return None
+            return None, None
+        finally:
+            self._finish_usage_capture()
+
+
+class InteractionLogger:
+    """Helper class for logging user queries and assistant responses."""
+
+    def __init__(self, log_file=None):
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        default_path = os.path.join(app_dir, "logs", "gpt-shell.log")
+        configured_path = log_file or os.getenv("GPT_SHELL_LOG_FILE", default_path)
+        resolved_path = os.path.expanduser(configured_path)
+        if not os.path.isabs(resolved_path):
+            resolved_path = os.path.join(app_dir, resolved_path)
+        self.log_file = resolved_path
+        log_dir = os.path.dirname(self.log_file)
+        self._lock = threading.Lock()
+        if log_dir:
+            try:
+                os.makedirs(log_dir, exist_ok=True)
+            except OSError as exc:
+                print(colored(f"Warning: unable to create log directory: {exc}", "yellow"), file=sys.stderr)
+
+    @staticmethod
+    def _sanitize_for_log(value):
+        if isinstance(value, str):
+            return CommandHelper.redact_sensitive_text(value)
+        if isinstance(value, dict):
+            return {str(key): InteractionLogger._sanitize_for_log(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [InteractionLogger._sanitize_for_log(item) for item in value]
+        if isinstance(value, tuple):
+            return [InteractionLogger._sanitize_for_log(item) for item in value]
+        return value
+
+    def _write_entry(self, entry):
+        with self._lock:
+            with open(self.log_file, "a", encoding="utf-8") as file:
+                file.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def log(self, role, text):
+        if not isinstance(text, str) or text.strip() == "":
+            return
+
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "role": role,
+            "text": self._sanitize_for_log(text),
+        }
+
+        try:
+            self._write_entry(entry)
+        except OSError as exc:
+            print(colored(f"Warning: unable to write log: {exc}", "yellow"), file=sys.stderr)
+
+    def log_event(self, event_name, data=None):
+        if not isinstance(event_name, str) or event_name.strip() == "":
+            return
+
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "type": "event",
+            "event": event_name,
+            "data": self._sanitize_for_log(data),
+        }
+
+        try:
+            self._write_entry(entry)
+        except OSError as exc:
+            print(colored(f"Warning: unable to write log: {exc}", "yellow"), file=sys.stderr)
 
 
 class CommandHelper:
     """Helper class for executing commands."""
+    DESTRUCTIVE_COMMAND_PATTERNS = (
+        (re.compile(r"(^|[;&|]\s*)\s*rm\s+.*(--no-preserve-root|--preserve-root=0)\b", re.IGNORECASE),
+         "rm with preserve-root disabled"),
+        (re.compile(
+            r"(^|[;&|]\s*)\s*(sudo\s+)?rm\b(?=[^\n]*(?:\s|^)(?:-rf|-fr|--recursive|--force|-r|-f)(?:\s|$))",
+            re.IGNORECASE,
+        ),
+         "rm with recursive/force options"),
+        (re.compile(r"(^|[;&|]\s*)\s*mkfs(\.\w+)?\b", re.IGNORECASE), "filesystem format command"),
+        (re.compile(r"(^|[;&|]\s*)\s*dd\s+.*\bof=/dev/", re.IGNORECASE), "dd write to block device"),
+        (re.compile(r"(^|[;&|]\s*)\s*shred\b", re.IGNORECASE), "secure delete command"),
+        (re.compile(r"(^|[;&|]\s*)\s*wipefs\b", re.IGNORECASE), "filesystem wipe command"),
+        (re.compile(r"(^|[;&|]\s*)\s*git\s+reset\s+--hard\b", re.IGNORECASE), "git hard reset"),
+        (re.compile(r"(^|[;&|]\s*)\s*git\s+clean\s+-[^\n]*f", re.IGNORECASE), "git clean with force"),
+        (re.compile(r"(^|[;&|]\s*)\s*docker\s+system\s+prune\b", re.IGNORECASE), "docker prune"),
+        (re.compile(r":\(\)\s*\{\s*:\|:&\s*\};:", re.IGNORECASE), "fork bomb pattern"),
+    )
+
+    @staticmethod
+    def _command_timeout_seconds():
+        raw_timeout = os.getenv("GPT_SHELL_COMMAND_TIMEOUT", "300")
+        try:
+            timeout = int(raw_timeout)
+        except (TypeError, ValueError):
+            timeout = 300
+        return timeout if timeout > 0 else None
+
+    @staticmethod
+    def detect_destructive_command(command):
+        if not isinstance(command, str) or command.strip() == "":
+            return None
+        normalized = command.strip()
+        for pattern, reason in CommandHelper.DESTRUCTIVE_COMMAND_PATTERNS:
+            if pattern.search(normalized):
+                return reason
+        return None
+
+    @staticmethod
+    def redact_sensitive_text(text):
+        if not isinstance(text, str) or text == "":
+            return text
+
+        redacted = text
+        redacted = re.sub(
+            r"(?i)\b(Authorization)\b(\s*[:=]\s*)Bearer\s+[A-Za-z0-9\-._~+/]+=*",
+            r"\1\2Bearer <REDACTED>",
+            redacted,
+        )
+        redacted = re.sub(
+            r"(?i)\b([A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z0-9_]*)\b(\s*[:=]\s*)([^\s\"']+|\"[^\"]*\"|'[^']*')",
+            r"\1\2<REDACTED>",
+            redacted,
+        )
+        redacted = re.sub(
+            r"(?i)\b(Bearer)\s+[A-Za-z0-9\-._~+/]+=*",
+            r"\1 <REDACTED>",
+            redacted,
+        )
+        redacted = re.sub(r"\bsk-[A-Za-z0-9]{12,}\b", "<REDACTED_OPENAI_KEY>", redacted)
+        redacted = re.sub(
+            r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+\b",
+            "<REDACTED_JWT>",
+            redacted,
+        )
+        redacted = re.sub(r"\bAKIA[0-9A-Z]{16}\b", "<REDACTED_AWS_ACCESS_KEY_ID>", redacted)
+        return redacted
+
+    @staticmethod
+    def _read_stream(stream, sink, color=None):
+        try:
+            for line in iter(stream.readline, ""):
+                sink.append(line)
+                if color:
+                    print(colored(line.rstrip("\n"), color))
+                else:
+                    print(line, end="")
+        finally:
+            stream.close()
 
     @staticmethod
     def run_shell_command(command):
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, text=True, universal_newlines=True)
-        stdout = []
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            universal_newlines=True,
+        )
+        stdout_lines = []
+        stderr_lines = []
 
-        for line in process.stdout:
-            print(line, end="")
-            stdout.append(line)
+        stdout_thread = threading.Thread(
+            target=CommandHelper._read_stream,
+            args=(process.stdout, stdout_lines),
+            daemon=True,
+        )
+        stderr_thread = threading.Thread(
+            target=CommandHelper._read_stream,
+            args=(process.stderr, stderr_lines, "red"),
+            daemon=True,
+        )
+        stdout_thread.start()
+        stderr_thread.start()
 
-        stderr_data = process.stderr.read()
-        if stderr_data:
-            print(colored(f"Error\n{stderr_data}", "red"))
+        timeout_seconds = CommandHelper._command_timeout_seconds()
+        timed_out = False
+        interrupted = False
 
-        process.wait()
+        try:
+            if timeout_seconds is None:
+                returncode = process.wait()
+            else:
+                returncode = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            process.kill()
+            returncode = process.wait()
+            print(
+                colored(
+                    f"Error: Command timed out after {timeout_seconds}s",
+                    "red",
+                )
+            )
+        except KeyboardInterrupt:
+            interrupted = True
+            process.kill()
+            returncode = process.wait()
+            print(colored("Command interrupted by user", "yellow"))
+        finally:
+            stdout_thread.join()
+            stderr_thread.join()
 
-        output = {"command": command, "stdout": ''.join(
-            stdout), "stderr": stderr_data}
-
-        if output["stdout"] != "":
-            stdout_lines = output["stdout"].split("\n")
-            for i, line in enumerate(stdout_lines):
-                if "KEY" in line:
-                    post_key_content = line[line.find("KEY") + 3:].strip()
-                    if "=" in post_key_content:
-                        stdout_lines[i] = line.split("=")[0] + "=<API_KEY>"
-            output["stdout"] = "\n".join(stdout_lines)
+        output = {
+            "command": command,
+            "stdout": CommandHelper.redact_sensitive_text("".join(stdout_lines)),
+            "stderr": CommandHelper.redact_sensitive_text("".join(stderr_lines)),
+            "returncode": returncode,
+            "timed_out": timed_out,
+            "interrupted": interrupted,
+        }
         return output
 
 
@@ -382,12 +597,180 @@ class OSHelper:
 class Application:
     """Main application class."""
 
-    def __init__(self, openai_helper: OpenAIHelper, command_helper: CommandHelper):
+    def __init__(
+        self,
+        openai_helper: OpenAIHelper,
+        command_helper: CommandHelper,
+        interaction_logger: InteractionLogger,
+    ):
         """Initializes the application."""
         self.openai_helper = openai_helper
         self.command_helper = command_helper
+        self.interaction_logger = interaction_logger
+        self.safe_mode_enabled = self._read_safe_mode_from_env()
+        self.show_tokens = self._read_show_tokens_from_env()
         self.session = PromptSession(history=FileHistory(os.path.expanduser(
             '~') + "/.gpts_history"), auto_suggest=AutoSuggestFromHistory())
+
+    @staticmethod
+    def _read_safe_mode_from_env():
+        raw_value = os.getenv("GPT_SHELL_SAFE_MODE", "1").strip().lower()
+        return raw_value not in {"0", "false", "off", "no"}
+
+    @staticmethod
+    def _read_show_tokens_from_env():
+        raw_value = os.getenv("GPT_SHELL_SHOW_TOKENS", "1").strip().lower()
+        return raw_value not in {"0", "false", "off", "no"}
+
+    def _safe_mode_status_text(self):
+        return "ON" if self.safe_mode_enabled else "OFF"
+
+    def _show_tokens_status_text(self):
+        return "ON" if self.show_tokens else "OFF"
+
+    def _set_safe_mode(self, enabled):
+        self.safe_mode_enabled = enabled
+        print(colored(f"Safe mode: {self._safe_mode_status_text()}", "green" if enabled else "yellow"))
+        self.interaction_logger.log_event("safe_mode_changed", {"enabled": enabled})
+
+    def _set_show_tokens(self, enabled):
+        self.show_tokens = enabled
+        print(colored(f"Token usage display: {self._show_tokens_status_text()}", "green" if enabled else "yellow"))
+        self.interaction_logger.log_event("token_usage_display_changed", {"enabled": enabled})
+
+    def _print_token_usage(self):
+        if not self.show_tokens:
+            return
+
+        usage = self.openai_helper.get_last_usage_summary()
+        if usage is None:
+            return
+
+        session_usage = self.openai_helper.get_session_usage_summary()
+        max_output_tokens = self.openai_helper.max_output_tokens
+        output_left = max(0, max_output_tokens - usage.get("output_tokens", 0))
+
+        usage_text = (
+            f"Tokens last: in={usage.get('input_tokens', 0)}, "
+            f"out={usage.get('output_tokens', 0)}, total={usage.get('total_tokens', 0)}, "
+            f"out_left={output_left}/{max_output_tokens} | "
+            f"session: in={session_usage.get('input_tokens', 0)}, "
+            f"out={session_usage.get('output_tokens', 0)}, "
+            f"total={session_usage.get('total_tokens', 0)}, "
+            f"calls={session_usage.get('api_calls', 0)}"
+        )
+        print(colored(usage_text, "cyan"))
+
+    def _print_assistant_response(self, response):
+        if not isinstance(response, str) or response.strip() == "":
+            return
+        print(colored(response, "magenta"))
+        self.interaction_logger.log("assistant", response)
+
+    def _print_commands_batch(self, commands):
+        print(colored("\nProposed commands:", "green"))
+        for index, command in enumerate(commands, start=1):
+            command_str = command.get("command", "").strip()
+            description = command.get("description", "").strip()
+            print(colored(f"[{index}] {command_str}", "blue"))
+            if description:
+                print(colored(f"    {description}", "grey"))
+
+    def _prompt_command_action(self, index, total):
+        prompt_text = (
+            f"Command {index}/{total} action "
+            "[r=run, e=edit, s=skip, a=run all remaining, q=stop] (default s): "
+        )
+        while True:
+            action = self.session.prompt(ANSI(colored(prompt_text, "green"))).strip().lower()
+            if action == "":
+                return "s"
+            if action in {"r", "e", "s", "a", "q", "y", "n"}:
+                return {"y": "r", "n": "s"}.get(action, action)
+            print(colored("Invalid choice. Use r/e/s/a/q.", "yellow"))
+
+    def _prompt_yes_no(self, text):
+        while True:
+            answer = self.session.prompt(ANSI(colored(text, "green"))).strip().lower()
+            if answer in {"", "n", "no"}:
+                return False
+            if answer in {"y", "yes"}:
+                return True
+            print(colored("Please answer with y or n.", "yellow"))
+
+    def _guard_command_with_safe_mode(self, command_str):
+        candidate = command_str
+        while True:
+            if not self.safe_mode_enabled:
+                return candidate, None
+
+            reason = self.command_helper.detect_destructive_command(candidate)
+            if reason is None:
+                return candidate, None
+
+            warning = f"Safe mode blocked high-risk command ({reason}): {candidate}"
+            print(colored(warning, "red"))
+            self.interaction_logger.log_event(
+                "safe_mode_blocked_command",
+                {"command": candidate, "reason": reason},
+            )
+            prompt_text = (
+                "Safe mode action [run=execute once, e=edit, s=skip] (default s): "
+            )
+            action = self.session.prompt(ANSI(colored(prompt_text, "yellow"))).strip().lower()
+
+            if action in {"run", "r"}:
+                self.interaction_logger.log_event(
+                    "safe_mode_override",
+                    {"command": candidate, "reason": reason},
+                )
+                return candidate, None
+
+            if action in {"e", "edit"}:
+                edited = self.session.prompt(
+                    ANSI(colored("Enter the modified command: ", "cyan")),
+                    default=candidate,
+                ).strip()
+                if edited == "":
+                    return None, "safe_mode_empty_after_edit"
+                candidate = edited
+                continue
+
+            return None, "blocked_by_safe_mode"
+
+    def _handle_runtime_command(self, user_input):
+        normalized = user_input.strip().lower()
+        if normalized in {"safe", "/safe"}:
+            print(colored(f"Safe mode is {self._safe_mode_status_text()}", "green" if self.safe_mode_enabled else "yellow"))
+            return True
+
+        if normalized in {"safe on", "/safe on"}:
+            self._set_safe_mode(True)
+            return True
+
+        if normalized in {"safe off", "/safe off"}:
+            if self._prompt_yes_no("Disable safe mode? This can execute destructive commands. (y/N): "):
+                self._set_safe_mode(False)
+            else:
+                print(colored("Safe mode stays ON.", "yellow"))
+            return True
+
+        if normalized in {"tokens", "/tokens"}:
+            print(colored(
+                f"Token usage display: {self._show_tokens_status_text()}",
+                "green" if self.show_tokens else "yellow",
+            ))
+            return True
+
+        if normalized in {"tokens on", "/tokens on"}:
+            self._set_show_tokens(True)
+            return True
+
+        if normalized in {"tokens off", "/tokens off"}:
+            self._set_show_tokens(False)
+            return True
+
+        return False
 
     def interpret_and_execute_command(self, user_prompt):
         """Interprets and executes the command."""
@@ -399,60 +782,148 @@ class Application:
     def manual_command_mode(self):
         """Manual command mode."""
         print(colored("Manual command mode activated. Please enter your command:", "green"))
-        command_str = self.session.prompt("")
-        command_output = self.command_helper.run_shell_command(command_str)
+        command_str = self.session.prompt("").strip()
+        if command_str == "":
+            print(colored("No command entered.", "yellow"))
+            return
+
+        if not self._prompt_yes_no(f"Run command `{command_str}`? (y/N): "):
+            print(colored("Command canceled.", "yellow"))
+            self.interaction_logger.log_event("command_skipped", {"command": command_str, "reason": "manual_mode_cancel"})
+            return
+
+        guarded_command, skip_reason = self._guard_command_with_safe_mode(command_str)
+        if guarded_command is None:
+            print(colored("Command canceled by safe mode.", "yellow"))
+            self.interaction_logger.log_event(
+                "command_skipped",
+                {"command": command_str, "reason": skip_reason},
+            )
+            return
+
+        command_output = self.command_helper.run_shell_command(guarded_command)
+        self.interaction_logger.log_event("command_executed", command_output)
         outputs = [command_output]
+        execution_summary = [{"command": guarded_command, "status": "executed"}]
 
-        response, commands = self.openai_helper.send_commands_outputs(outputs)
-        print(colored(f"{response}", "magenta"))
-
-        if commands is not None:
+        response, commands = self.openai_helper.send_commands_outputs(outputs, execution_summary=execution_summary)
+        self._print_assistant_response(response)
+        self._print_token_usage()
+        if commands:
             self.execute_commands(commands)
 
     def auto_command_mode(self, user_prompt):
         """Auto command mode."""
-        commands = self.openai_helper.get_commands(user_prompt)
-        if commands is not None:
-            self.execute_commands(commands["commands"])
+        commands_payload = self.openai_helper.get_commands(user_prompt)
+        self._print_token_usage()
+        self.interaction_logger.log_event("auto_mode_commands_payload", commands_payload)
+        if commands_payload and commands_payload.get("response"):
+            self._print_assistant_response(commands_payload["response"])
+
+        commands = commands_payload.get("commands") if commands_payload else None
+        if commands:
+            self.execute_commands(commands)
+        elif commands_payload and commands_payload.get("response"):
+            print(colored("No commands proposed.", "yellow"))
         else:
             print(colored("No commands found", "red"))
 
     def execute_commands(self, commands):
         """Executes the commands."""
-        outputs = []
-        action = ""
-        while commands is not None:
-            commands_list = [command["command"] for command in commands]
-            print(colored(f"List of commands {commands_list}", "magenta"))
-            for command in commands:
-                command_str = command["command"]
-                print(colored(f"{command['description']}", "magenta"))
-                print(colored(f"{command_str}", "blue"))
+        while commands:
+            self._print_commands_batch(commands)
+            self.interaction_logger.log_event("commands_batch", commands)
 
-                if action.lower() != "a":
-                    action = prompt(ANSI(
-                        colored(f"Do you want to run (y), edit (e), or execute all (a) commands? (y/e/a/N): ", "green")))
+            outputs = []
+            execution_summary = []
+            run_all_remaining = False
+            stop_after_batch = False
 
-                if action.lower() == "e":
-                    command_str = self.session.prompt(ANSI(
-                        colored("Enter the modified command: ", "cyan")), default=command_str)
-                    action = prompt(ANSI(
-                        colored(f"Do you want to run the command? (y/N): ", "green")))
+            for index, command in enumerate(commands, start=1):
+                command_str = command.get("command", "").strip()
+                if command_str == "":
+                    execution_summary.append({"command": "", "status": "skipped_empty"})
+                    continue
 
-                if action.lower() in ["y", "a"]:
-                    output = self.command_helper.run_shell_command(command_str)
-                    outputs.append(output)
-                else:
+                action = "r" if run_all_remaining else self._prompt_command_action(index, len(commands))
+
+                if action == "q":
+                    stop_after_batch = True
+                    execution_summary.append({"command": command_str, "status": "stopped_by_user"})
+                    break
+
+                if action == "a":
+                    run_all_remaining = True
+                    action = "r"
+
+                if action == "e":
+                    edited_command = self.session.prompt(
+                        ANSI(colored("Enter the modified command: ", "cyan")),
+                        default=command_str,
+                    ).strip()
+                    if edited_command == "":
+                        print(colored("Empty command after edit, skipping.", "yellow"))
+                        execution_summary.append({"command": command_str, "status": "skipped_empty_after_edit"})
+                        self.interaction_logger.log_event(
+                            "command_skipped",
+                            {"command": command_str, "reason": "empty_after_edit"},
+                        )
+                        continue
+                    command_str = edited_command
+                    if not self._prompt_yes_no("Run the edited command? (y/N): "):
+                        print(colored("Skipping command", "yellow"))
+                        execution_summary.append({"command": command_str, "status": "skipped_after_edit"})
+                        self.interaction_logger.log_event(
+                            "command_skipped",
+                            {"command": command_str, "reason": "skipped_after_edit"},
+                        )
+                        continue
+                    action = "r"
+
+                if action == "s":
                     print(colored("Skipping command", "yellow"))
+                    execution_summary.append({"command": command_str, "status": "skipped"})
+                    self.interaction_logger.log_event("command_skipped", {"command": command_str})
+                    continue
 
-            if len(outputs) > 0:
-                response, commands = self.openai_helper.send_commands_outputs(
-                    outputs)
-                print(colored(f"{response}", "magenta"))
-                outputs = []
-                action = ""
-            else:
-                commands = None
+                guarded_command, skip_reason = self._guard_command_with_safe_mode(command_str)
+                if guarded_command is None:
+                    print(colored("Skipping command (safe mode).", "yellow"))
+                    execution_summary.append({"command": command_str, "status": "blocked_by_safe_mode"})
+                    self.interaction_logger.log_event(
+                        "command_skipped",
+                        {"command": command_str, "reason": skip_reason},
+                    )
+                    continue
+
+                output = self.command_helper.run_shell_command(guarded_command)
+                outputs.append(output)
+                execution_summary.append(
+                    {
+                        "command": guarded_command,
+                        "status": "executed",
+                        "returncode": output.get("returncode"),
+                        "timed_out": output.get("timed_out"),
+                        "interrupted": output.get("interrupted"),
+                    }
+                )
+                self.interaction_logger.log_event("command_executed", output)
+
+            self.interaction_logger.log_event("commands_execution_summary", execution_summary)
+
+            if not outputs:
+                print(colored("No commands were executed.", "yellow"))
+                break
+
+            response, next_commands = self.openai_helper.send_commands_outputs(
+                outputs,
+                execution_summary=execution_summary,
+            )
+            self._print_assistant_response(response)
+            self._print_token_usage()
+            if stop_after_batch:
+                break
+            commands = next_commands
 
     def run(self):
         """Runs the application."""
@@ -460,14 +931,20 @@ class Application:
         print(
             colored(f"Your current environment: Shell={shell_name}, OS={os_name}", "green"))
         print(colored(
-            "Type 'e' to enter manual command mode or 'q' to quit, (tokens left)\n", "green"))
+            f"Safe mode: {self._safe_mode_status_text()} (use `safe on`, `safe off`, `safe`).", "green"))
+        print(colored(
+            f"Token usage display: {self._show_tokens_status_text()} (use `tokens on`, `tokens off`, `tokens`).", "green"))
+        print(colored("Type 'e' to enter manual command mode or 'q' to quit.\n", "green"))
 
         while True:
             try:
                 user_input = self.session.prompt(
-                    ANSI(colored(f"ChatGPT ({self.openai_helper.remaining_tokens}): ", "green")))
+                    ANSI(colored("ChatGPT: ", "green")))
                 if user_input.lower() == 'q':
                     break
+                self.interaction_logger.log("user", user_input)
+                if self._handle_runtime_command(user_input):
+                    continue
                 self.interpret_and_execute_command(user_input)
             except subprocess.CalledProcessError as e:
                 print(colored(
@@ -484,9 +961,20 @@ class Application:
 
 if __name__ == "__main__":
     """Main entry point."""
-    openai_helper = OpenAIHelper(model_name="gpt-4o",
-                                  max_tokens=16 * 1024
-                                  )
+    max_output_tokens_raw = os.getenv("GPT_SHELL_MAX_OUTPUT_TOKENS", "1200")
+    try:
+        max_output_tokens = int(max_output_tokens_raw)
+        if max_output_tokens <= 0:
+            max_output_tokens = 1200
+    except (TypeError, ValueError):
+        max_output_tokens = 1200
+
+    interaction_logger = InteractionLogger()
+    openai_helper = OpenAIHelper(
+        model_name=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        max_output_tokens=max_output_tokens,
+        interaction_logger=interaction_logger,
+    )
     command_helper = CommandHelper()
-    application = Application(openai_helper, command_helper)
+    application = Application(openai_helper, command_helper, interaction_logger)
     application.run()

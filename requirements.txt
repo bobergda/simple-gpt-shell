@@ -1,5 +1,4 @@
-openai
+openai>=1.50.0
 termcolor
 distro
 prompt_toolkit
-tiktoken
