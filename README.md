@@ -1,31 +1,78 @@
 # Simple GPT Shell
-The gpt-shell.py script is a powerful Python command-line interface leveraging OpenAI's GPT models to provide insightful suggestions for shell commands. Whether you input a specific command or describe a task, the application generates an appropriate command as interpreted by the selected GPT model. This script communicates with the chosen GPT model through the OpenAI API, enriching user interaction. To ensure the script's functionality, you must set an API key as an environment variable.
 
-Designed for terminal environments, the script offers a user-friendly system prompt for input. It sends the command output to both the terminal and the OpenAI GPT chat, potentially offering additional suggestions for subsequent commands to execute. The script excels at simplifying complex multi-step commands into a single-line command. It further includes an analysis of the command's output conducted by the GPT model, providing an in-depth execution explanation alongside the suggested command.
+`gpt-shell.py` is a CLI assistant that turns natural-language requests into shell commands, runs them interactively, and explains the results.
 
-A key feature of the gpt-shell.py script is its use of function calling. It employs the latest GPT models (like gpt-3.5-turbo-0613 and gpt-4-0613) which have been fine-tuned to detect when a function should be called based on the input. The model then returns a JSON object adhering to the function signature, which can be used to call the function in your code. This results in more reliable retrieval of structured data and offers potential for further functionality, such as creating chatbots that answer questions by calling external APIs. 
+This version is migrated to the OpenAI **Responses API** and uses **server-side conversation memory** via `previous_response_id` (instead of keeping full chat history locally).
 
-The script also employs effective token management, truncating the chat history when necessary to adhere to the model's token limitations. The Application code includes manual and auto modes for command execution, enhancing user control.
+## Example Session (Text-Only)
 
-![Screen 1](screen1.png "Screen 1")
+Color legend:
+- 🟦 User input
+- 🟪 Assistant suggestion
+- 🟨 Command execution
+- 🟩 Result summary
+
+```text
+🟦 You: find the 5 biggest files here
+
+🟪 Assistant:
+I will run:
+1) du -ah . | sort -hr | head -n 5
+
+🟨 Running:
+$ du -ah . | sort -hr | head -n 5
+
+🟩 Result:
+- 156M ./screen1.png
+-  39M ./gpt-shell.py
+- ...
+
+🟪 Assistant:
+The largest file is `screen1.png` (~156 MB). Want me to suggest cleanup options?
+```
+
+## Features
+
+- Function calling for structured command suggestions (`get_commands`)
+- Auto mode and manual mode for command execution
+- Follow-up analysis of command output
+- Server-side context chaining between turns
+- JSONL logging in the app folder (`./logs/gpt-shell.log`) with user/assistant messages, API request/response metadata, and command execution events
 
 ## Installation
 
-1. Clone the repository to your local machine.
-2. Install the required dependencies by running `pip install -r requirements.txt`.
-3. Set your OpenAI API key as an environment variable `export OPENAI_API_KEY='your-api-key'`.
+1. Clone the repository.
+2. Install dependencies:
+   - `pip install -r requirements.txt`
+3. Set API key:
+   - `export OPENAI_API_KEY='your-api-key'`
+
+Optional model override:
+- `export OPENAI_MODEL='gpt-4o-mini'`
+
+Optional log file override:
+- `export GPT_SHELL_LOG_FILE="./logs/custom.log"`
+
+Optional safe mode toggle (default: enabled):
+- `export GPT_SHELL_SAFE_MODE=1`
+
+Optional token output toggle (default: enabled):
+- `export GPT_SHELL_SHOW_TOKENS=1`
+
+Optional max output tokens per API response (default: `1200`):
+- `export GPT_SHELL_MAX_OUTPUT_TOKENS=1200`
 
 ## Usage
 
-1. Open a terminal and navigate to the directory where `gpt-shell.py` is located.
-2. Run the script by typing `python gpt-shell.py` and pressing enter.
-3. Follow the system prompt to input commands.
-4. The script will provide a suggested command to execute based on the input.
-
-## Contributing
-
-Contributions are welcome! If you find a bug or have an idea for a new feature, please open an issue or submit a pull request.
+1. Run:
+   - `./gpt-shell.sh`
+   - first-time or dependency update: `./gpt-shell.sh --install`
+2. Enter a task in plain language.
+3. For each suggested command choose: run, edit, skip, run-all-remaining, or stop.
+4. Use `safe on`, `safe off`, or `safe` to control safe mode.
+5. Use `tokens on`, `tokens off`, or `tokens` to control token usage display.
+6. Use `e` to enter manual command mode, `q` to quit.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
