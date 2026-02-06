@@ -40,24 +40,39 @@ export GPT_SHELL_MAX_OUTPUT_TOKENS=1200
 
 ## Example Session
 
+### 1. Startup
 ```console
 Your current environment: Shell=bash, OS=Linux Ubuntu
 Safe mode: ON (use `safe on`, `safe off`, `safe`).
 Token usage display: ON (use `tokens on`, `tokens off`, `tokens`).
 Type 'e' to enter manual command mode or 'q' to quit.
+```
 
+### 2. User prompt
+```console
 ChatGPT: find the 3 biggest files in this project
 Tokens last: in=..., out=..., total=..., out_left=.../... | session: in=..., out=..., total=..., calls=...
 This command will search for files in the current directory, sort them by size, and display the top 3 largest files.
+```
 
-Proposed commands:
-[1] du -ah . | sort -rh | head -n 3
-    Find and list the 3 biggest files in the current directory and its subdirectories.
+### 3. Proposed command
+```shell
+du -ah . | sort -rh | head -n 3
+```
+
+```console
 Command 1/1 action [r=run, e=edit, s=skip, a=run all remaining, q=stop] (default s): a
+```
+
+### 4. Command output
+```console
 50M    .
 48M    ./.venv/lib/python3.12/site-packages
 48M    ./.venv/lib/python3.12
+```
 
+### 5. Assistant summary
+```console
 The command ran successfully and returned the top entries by size.
 ```
 
