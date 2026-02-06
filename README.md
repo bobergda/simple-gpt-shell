@@ -1,6 +1,6 @@
-# Simple GPT Shell
+# Prompt2Shell Agent
 
-`gpt-shell.py` is a CLI assistant that turns natural-language requests into shell commands, runs them interactively, and explains the results.
+`Prompt2Shell Agent` is a CLI assistant that turns natural-language requests into shell commands, runs them interactively, and explains the results.
 
 This version is migrated to the OpenAI **Responses API** and uses **server-side conversation memory** via `previous_response_id` (instead of keeping full chat history locally).
 
@@ -10,18 +10,18 @@ This version is migrated to the OpenAI **Responses API** and uses **server-side 
 - Auto mode and manual mode for command execution
 - Follow-up analysis of command output
 - Server-side context chaining between turns
-- JSONL logging in the app folder (`./logs/gpt-shell.log`) with user/assistant messages, API request/response metadata, and command execution events
+- JSONL logging in the app folder (`./logs/prompt2shell-agent.log`) with user/assistant messages, API request/response metadata, and command execution events
 
 ## Usage
 
 1. One-time setup:
    ```shell
-   ./gpt-shell.sh --install
+   ./prompt2shell-agent.sh --install
    export OPENAI_API_KEY="your-api-key"
    ```
 2. Run:
    ```shell
-   ./gpt-shell.sh
+   ./prompt2shell-agent.sh
    ```
 3. Enter a task in plain language.
 4. For each suggested command choose: run, edit, skip, run-all-remaining, or stop.
@@ -32,10 +32,10 @@ This version is migrated to the OpenAI **Responses API** and uses **server-side 
 Optional environment variables:
 ```shell
 export OPENAI_MODEL="gpt-4o-mini"
-export GPT_SHELL_LOG_FILE="./logs/custom.log"
-export GPT_SHELL_SAFE_MODE=1
-export GPT_SHELL_SHOW_TOKENS=1
-export GPT_SHELL_MAX_OUTPUT_TOKENS=1200
+export PROMPT2SHELL_LOG_FILE="./logs/custom.log"
+export PROMPT2SHELL_SAFE_MODE=1
+export PROMPT2SHELL_SHOW_TOKENS=1
+export PROMPT2SHELL_MAX_OUTPUT_TOKENS=1200
 ```
 
 ## Example Session
@@ -50,7 +50,7 @@ Type 'e' to enter manual command mode or 'q' to quit.
 
 Request and command:
 ```console
-ChatGPT: find the 3 biggest files in this project
+Prompt2Shell Agent: find the 3 biggest files in this project
 Tokens last: in=..., out=..., total=..., out_left=.../... | session: in=..., out=..., total=..., calls=...
 This command will search for files in the current directory, sort them by size, and display the top 3 largest files.
 ```

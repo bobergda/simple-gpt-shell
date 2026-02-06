@@ -14,6 +14,8 @@ from prompt_toolkit import ANSI, PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
+APP_NAME = "Prompt2Shell Agent"
+
 
 # Built-in visual theme (no env-based color overrides).
 THEME_COLOR_MAP = {
@@ -41,6 +43,13 @@ def colored(text, color=None, on_color=None, attrs=None):
         if attrs is None:
             attrs = THEME_ATTRS_MAP.get(color_key)
     return term_colored(text, mapped_color, on_color=on_color, attrs=attrs)
+
+
+def getenv_with_legacy(primary_key, legacy_key, default=None):
+    value = os.getenv(primary_key)
+    if value is not None:
+        return value
+    return os.getenv(legacy_key, default)
 
 
 class OpenAIHelper:
@@ -368,8 +377,12 @@ class InteractionLogger:
 
     def __init__(self, log_file=None):
         app_dir = os.path.dirname(os.path.abspath(__file__))
-        default_path = os.path.join(app_dir, "logs", "gpt-shell.log")
-        configured_path = log_file or os.getenv("GPT_SHELL_LOG_FILE", default_path)
+        default_path = os.path.join(app_dir, "logs", "prompt2shell-agent.log")
+        configured_path = log_file or getenv_with_legacy(
+            "PROMPT2SHELL_LOG_FILE",
+            "GPT_SHELL_LOG_FILE",
+            default_path,
+        )
         resolved_path = os.path.expanduser(configured_path)
         if not os.path.isabs(resolved_path):
             resolved_path = os.path.join(app_dir, resolved_path)
@@ -453,7 +466,11 @@ class CommandHelper:
 
     @staticmethod
     def _command_timeout_seconds():
-        raw_timeout = os.getenv("GPT_SHELL_COMMAND_TIMEOUT", "300")
+        raw_timeout = getenv_with_legacy(
+            "PROMPT2SHELL_COMMAND_TIMEOUT",
+            "GPT_SHELL_COMMAND_TIMEOUT",
+            "300",
+        )
         try:
             timeout = int(raw_timeout)
         except (TypeError, ValueError):
@@ -609,17 +626,24 @@ class Application:
         self.interaction_logger = interaction_logger
         self.safe_mode_enabled = self._read_safe_mode_from_env()
         self.show_tokens = self._read_show_tokens_from_env()
-        self.session = PromptSession(history=FileHistory(os.path.expanduser(
-            '~') + "/.gpts_history"), auto_suggest=AutoSuggestFromHistory())
+        default_history_path = os.path.expanduser("~/.prompt2shell_history")
+        legacy_history_path = os.path.expanduser("~/.gpts_history")
+        history_path = default_history_path
+        if not os.path.exists(default_history_path) and os.path.exists(legacy_history_path):
+            history_path = legacy_history_path
+        self.session = PromptSession(
+            history=FileHistory(history_path),
+            auto_suggest=AutoSuggestFromHistory(),
+        )
 
     @staticmethod
     def _read_safe_mode_from_env():
-        raw_value = os.getenv("GPT_SHELL_SAFE_MODE", "1").strip().lower()
+        raw_value = getenv_with_legacy("PROMPT2SHELL_SAFE_MODE", "GPT_SHELL_SAFE_MODE", "1").strip().lower()
         return raw_value not in {"0", "false", "off", "no"}
 
     @staticmethod
     def _read_show_tokens_from_env():
-        raw_value = os.getenv("GPT_SHELL_SHOW_TOKENS", "1").strip().lower()
+        raw_value = getenv_with_legacy("PROMPT2SHELL_SHOW_TOKENS", "GPT_SHELL_SHOW_TOKENS", "1").strip().lower()
         return raw_value not in {"0", "false", "off", "no"}
 
     def _safe_mode_status_text(self):
@@ -939,7 +963,7 @@ class Application:
         while True:
             try:
                 user_input = self.session.prompt(
-                    ANSI(colored("ChatGPT: ", "green")))
+                    ANSI(colored(f"{APP_NAME}: ", "green")))
                 if user_input.lower() == 'q':
                     break
                 self.interaction_logger.log("user", user_input)
@@ -961,7 +985,11 @@ class Application:
 
 if __name__ == "__main__":
     """Main entry point."""
-    max_output_tokens_raw = os.getenv("GPT_SHELL_MAX_OUTPUT_TOKENS", "1200")
+    max_output_tokens_raw = getenv_with_legacy(
+        "PROMPT2SHELL_MAX_OUTPUT_TOKENS",
+        "GPT_SHELL_MAX_OUTPUT_TOKENS",
+        "1200",
+    )
     try:
         max_output_tokens = int(max_output_tokens_raw)
         if max_output_tokens <= 0:

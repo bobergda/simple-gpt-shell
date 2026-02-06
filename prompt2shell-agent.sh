@@ -17,7 +17,7 @@ for arg in "$@"; do
 done
 
 if [ ! -d "$VENV_DIR" ]; then
-  echo "[gpt-shell] Tworze virtualenv w $VENV_DIR"
+  echo "[prompt2shell-agent] Tworze virtualenv w $VENV_DIR"
   "$PYTHON_BIN" -m venv "$VENV_DIR"
 fi
 
@@ -26,11 +26,11 @@ source "$VENV_DIR/bin/activate"
 
 if [ "$INSTALL_DEPS" -eq 1 ]; then
   if [ -f "$REQ_FILE" ]; then
-    echo "[gpt-shell] Instaluje zaleznosci z requirements.txt"
+    echo "[prompt2shell-agent] Instaluje zaleznosci z requirements.txt"
     pip install -r "$REQ_FILE"
   else
-    echo "[gpt-shell] Brak $REQ_FILE - pomijam instalacje zaleznosci" >&2
+    echo "[prompt2shell-agent] Brak $REQ_FILE - pomijam instalacje zaleznosci" >&2
   fi
 fi
 
-exec python "$SCRIPT_DIR/gpt-shell.py" "${FORWARDED_ARGS[@]}"
+exec python "$SCRIPT_DIR/prompt2shell-agent.py" "${FORWARDED_ARGS[@]}"
