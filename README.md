@@ -4,31 +4,26 @@
 
 This version is migrated to the OpenAI **Responses API** and uses **server-side conversation memory** via `previous_response_id` (instead of keeping full chat history locally).
 
-## Example Session (Text-Only)
-
-Color legend:
-- 🟦 User input
-- 🟪 Assistant suggestion
-- 🟨 Command execution
-- 🟩 Result summary
+## Example Session
 
 ```text
-🟦 You: find the 5 biggest files here
+You: find the 3 biggest files in this project
 
-🟪 Assistant:
-I will run:
-1) du -ah . | sort -hr | head -n 5
+Assistant:
+Plan:
+1) du -ah . | sort -hr | head -n 3
+Run this command? [run/edit/skip/stop]: run
 
-🟨 Running:
-$ du -ah . | sort -hr | head -n 5
+Running:
+$ du -ah . | sort -hr | head -n 3
 
-🟩 Result:
+Result:
 - 156M ./screen1.png
 -  39M ./gpt-shell.py
-- ...
+-  12M ./logs/session-2026-02-06.jsonl
 
-🟪 Assistant:
-The largest file is `screen1.png` (~156 MB). Want me to suggest cleanup options?
+Assistant:
+Top file is `screen1.png` (~156 MB). Want cleanup suggestions?
 ```
 
 ## Features
@@ -39,39 +34,25 @@ The largest file is `screen1.png` (~156 MB). Want me to suggest cleanup options?
 - Server-side context chaining between turns
 - JSONL logging in the app folder (`./logs/gpt-shell.log`) with user/assistant messages, API request/response metadata, and command execution events
 
-## Installation
-
-1. Clone the repository.
-2. Install dependencies:
-   - `pip install -r requirements.txt`
-3. Set API key:
-   - `export OPENAI_API_KEY='your-api-key'`
-
-Optional model override:
-- `export OPENAI_MODEL='gpt-4o-mini'`
-
-Optional log file override:
-- `export GPT_SHELL_LOG_FILE="./logs/custom.log"`
-
-Optional safe mode toggle (default: enabled):
-- `export GPT_SHELL_SAFE_MODE=1`
-
-Optional token output toggle (default: enabled):
-- `export GPT_SHELL_SHOW_TOKENS=1`
-
-Optional max output tokens per API response (default: `1200`):
-- `export GPT_SHELL_MAX_OUTPUT_TOKENS=1200`
-
 ## Usage
 
-1. Run:
+1. One-time setup:
+   - `./gpt-shell.sh --install`
+   - `export OPENAI_API_KEY='your-api-key'`
+2. Run:
    - `./gpt-shell.sh`
-   - first-time or dependency update: `./gpt-shell.sh --install`
-2. Enter a task in plain language.
-3. For each suggested command choose: run, edit, skip, run-all-remaining, or stop.
-4. Use `safe on`, `safe off`, or `safe` to control safe mode.
-5. Use `tokens on`, `tokens off`, or `tokens` to control token usage display.
-6. Use `e` to enter manual command mode, `q` to quit.
+3. Enter a task in plain language.
+4. For each suggested command choose: run, edit, skip, run-all-remaining, or stop.
+5. Use `safe on`, `safe off`, or `safe` to control safe mode.
+6. Use `tokens on`, `tokens off`, or `tokens` to control token usage display.
+7. Use `e` to enter manual command mode, `q` to quit.
+
+Optional environment variables:
+- `export OPENAI_MODEL='gpt-4o-mini'`
+- `export GPT_SHELL_LOG_FILE="./logs/custom.log"`
+- `export GPT_SHELL_SAFE_MODE=1`
+- `export GPT_SHELL_SHOW_TOKENS=1`
+- `export GPT_SHELL_MAX_OUTPUT_TOKENS=1200`
 
 ## License
 
