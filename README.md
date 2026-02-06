@@ -15,10 +15,14 @@ This version is migrated to the OpenAI **Responses API** and uses **server-side 
 ## Usage
 
 1. One-time setup:
-   - `./gpt-shell.sh --install`
-   - `export OPENAI_API_KEY='your-api-key'`
+   ```shell
+   ./gpt-shell.sh --install
+   export OPENAI_API_KEY="your-api-key"
+   ```
 2. Run:
-   - `./gpt-shell.sh`
+   ```shell
+   ./gpt-shell.sh
+   ```
 3. Enter a task in plain language.
 4. For each suggested command choose: run, edit, skip, run-all-remaining, or stop.
 5. Use `safe on`, `safe off`, or `safe` to control safe mode.
@@ -26,15 +30,17 @@ This version is migrated to the OpenAI **Responses API** and uses **server-side 
 7. Use `e` to enter manual command mode, `q` to quit.
 
 Optional environment variables:
-- `export OPENAI_MODEL='gpt-4o-mini'`
-- `export GPT_SHELL_LOG_FILE="./logs/custom.log"`
-- `export GPT_SHELL_SAFE_MODE=1`
-- `export GPT_SHELL_SHOW_TOKENS=1`
-- `export GPT_SHELL_MAX_OUTPUT_TOKENS=1200`
+```shell
+export OPENAI_MODEL="gpt-4o-mini"
+export GPT_SHELL_LOG_FILE="./logs/custom.log"
+export GPT_SHELL_SAFE_MODE=1
+export GPT_SHELL_SHOW_TOKENS=1
+export GPT_SHELL_MAX_OUTPUT_TOKENS=1200
+```
 
 ## Example Session
 
-```text
+```console
 Your current environment: Shell=bash, OS=Linux Ubuntu
 Safe mode: ON (use `safe on`, `safe off`, `safe`).
 Token usage display: ON (use `tokens on`, `tokens off`, `tokens`).
