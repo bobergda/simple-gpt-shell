@@ -1,16 +1,63 @@
+import argparse
 import json
-import os
 import re
 import sys
 
 from .application import Application
 from .command_helper import CommandHelper
-from .common import env_flag
+from .config import load_app_config
 from .interaction_logger import InteractionLogger
 from .openai_helper import OpenAIHelper
 
 
 LS_LONG_ENTRY_PATTERN = re.compile(r"^[bcdlps-][rwxstST-]{9}\s+")
+
+
+def build_argument_parser():
+    parser = argparse.ArgumentParser(
+        prog="prompt2shell",
+        description="Turn natural-language requests into reviewed shell commands.",
+    )
+    parser.add_argument("prompt", nargs="*", help="Initial prompt to send to the assistant.")
+    parser.add_argument("-o", "--once", action="store_true", default=None, help="Exit after processing the initial prompt.")
+    parser.add_argument("--model", dest="openai_model", help="Override the OpenAI model for this run.")
+    parser.add_argument("--tokens", dest="max_output_tokens", type=int, help="Set max output tokens for this run.")
+    parser.add_argument("--config", dest="config_file", help="Path to a TOML config file.")
+    parser.add_argument("--dry-run", action="store_true", default=None, help="Preview commands without executing them.")
+    parser.add_argument(
+        "--explain-only",
+        action="store_true",
+        default=None,
+        help="Explain and print proposed commands without entering execution prompts.",
+    )
+    parser.add_argument(
+        "--report",
+        nargs="?",
+        const="AUTO",
+        dest="session_report_file",
+        help="Write a Markdown session report. Optionally provide a custom file path.",
+    )
+    return parser
+
+
+def parse_runtime_args(argv=None):
+    parser = build_argument_parser()
+    parsed = parser.parse_args(argv)
+    cli_overrides = {
+        "config_file": parsed.config_file,
+        "openai_model": parsed.openai_model,
+        "max_output_tokens": parsed.max_output_tokens,
+        "once_mode": parsed.once,
+        "dry_run": parsed.dry_run,
+        "explain_only": parsed.explain_only,
+    }
+
+    if parsed.session_report_file == "AUTO":
+        cli_overrides["session_report_file"] = "./logs/reports/latest-session.md"
+    elif parsed.session_report_file:
+        cli_overrides["session_report_file"] = parsed.session_report_file
+
+    return parsed, cli_overrides
 
 
 def read_piped_input():
@@ -92,30 +139,24 @@ def build_prompt_from_pipe(user_prompt, piped_input):
     )
 
 
-def build_application():
-    max_output_tokens_raw = os.getenv("PROMPT2SHELL_MAX_OUTPUT_TOKENS", "1200")
-    try:
-        max_output_tokens = int(max_output_tokens_raw)
-        if max_output_tokens <= 0:
-            max_output_tokens = 1200
-    except (TypeError, ValueError):
-        max_output_tokens = 1200
-
-    interaction_logger = InteractionLogger()
+def build_application(config):
+    interaction_logger = InteractionLogger(log_file=config.log_file, enabled=config.log_enabled)
     openai_helper = OpenAIHelper(
-        model_name=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        max_output_tokens=max_output_tokens,
+        model_name=config.openai_model,
+        max_output_tokens=config.max_output_tokens,
         interaction_logger=interaction_logger,
+        api_key=config.openai_api_key,
+        chat_language=config.chat_language,
     )
-    command_helper = CommandHelper()
-    return Application(openai_helper, command_helper, interaction_logger)
+    command_helper = CommandHelper(timeout_seconds=config.command_timeout)
+    return Application(openai_helper, command_helper, interaction_logger, settings=config)
 
 
 def main(argv=None):
-    if argv is None:
-        argv = sys.argv[1:]
+    parsed_args, cli_overrides = parse_runtime_args(argv if argv is not None else sys.argv[1:])
+    config = load_app_config(cli_overrides)
 
-    initial_prompt = " ".join(argv).strip() if argv else None
+    initial_prompt = " ".join(parsed_args.prompt).strip() if parsed_args.prompt else None
     if initial_prompt == "":
         initial_prompt = None
 
@@ -123,16 +164,22 @@ def main(argv=None):
     if piped_input is not None:
         initial_prompt = build_prompt_from_pipe(initial_prompt, piped_input)
 
-    once_mode = env_flag("PROMPT2SHELL_ONCE", False)
-    app = build_application()
+    app = build_application(config)
     configure_context = getattr(getattr(app, "openai_helper", None), "configure_session_context", None)
     if callable(configure_context):
+        context_kwargs = {
+            "once_mode": config.once_mode,
+            "has_piped_input": piped_input is not None,
+        }
+        if config.dry_run:
+            context_kwargs["dry_run"] = True
+        if config.explain_only:
+            context_kwargs["explain_only"] = True
         configure_context(
-            once_mode=once_mode,
-            has_piped_input=piped_input is not None,
+            **context_kwargs,
         )
 
-    app.run(initial_prompt=initial_prompt, exit_after_initial_prompt=once_mode)
+    app.run(initial_prompt=initial_prompt, exit_after_initial_prompt=config.once_mode)
 
 
 if __name__ == "__main__":

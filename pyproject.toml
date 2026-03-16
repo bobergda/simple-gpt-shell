@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prompt2shell-agent"
+version = "0.1.0"
+description = "CLI assistant that turns natural-language requests into shell commands."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "Prompt2Shell contributors" }
+]
+dependencies = [
+  "distro==1.9.0",
+  "openai==2.20.0",
+  "prompt_toolkit==3.0.52",
+  "termcolor==3.3.0",
+  "tomli>=2.0.1; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2.2",
+]
+
+[project.scripts]
+prompt2shell = "prompt2shell.main:main"
+
+[tool.setuptools]
+packages = ["prompt2shell"]
+
+[tool.setuptools.package-data]
+prompt2shell = []

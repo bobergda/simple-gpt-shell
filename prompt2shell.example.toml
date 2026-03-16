@@ -1,0 +1,21 @@
+[openai]
+api_key = ""
+model = "gpt-4o-mini"
+chat_language = "english"
+
+[app]
+max_output_tokens = 1200
+safe_mode = true
+strict_safe_mode = false
+show_tokens = true
+command_timeout = 300
+once_mode = false
+dry_run = false
+explain_only = false
+
+[logging]
+enabled = false
+file = "./logs/prompt2shell.log"
+
+[report]
+file = "./logs/reports/latest-session.md"

@@ -13,10 +13,17 @@ class ApplicationRunBannerTests(unittest.TestCase):
             shell_name="bash",
             model_name="gpt-test",
             chat_language="polish",
+            get_session_usage_summary=lambda: {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "api_calls": 0},
         )
         app.interaction_logger = mock.Mock()
         app.session = mock.Mock()
         app._process_user_input = mock.Mock(return_value=False)
+        app.safe_mode_enabled = True
+        app.safe_mode_strict = False
+        app.show_tokens = True
+        app.dry_run = False
+        app.explain_only = False
+        app.session_report_file = None
         return app
 
     def test_run_shows_interactive_hint_without_initial_prompt(self):
@@ -117,6 +124,12 @@ class ApplicationCommandSelectionTests(unittest.TestCase):
         app._sync_openai_session_context = mock.Mock()
         app._print_assistant_response = mock.Mock()
         app._print_token_usage = mock.Mock()
+        app.safe_mode_enabled = True
+        app.safe_mode_strict = False
+        app.show_tokens = True
+        app.dry_run = False
+        app.explain_only = False
+        app.session_report_file = None
         return app
 
     def test_prompt_command_action_accepts_numeric_selection(self):
@@ -224,6 +237,34 @@ class ApplicationCommandSelectionTests(unittest.TestCase):
         self.assertEqual(app.openai_helper.send_commands_outputs.call_count, 2)
         for call in app.openai_helper.send_commands_outputs.call_args_list:
             self.assertEqual(call.kwargs.get("allow_follow_up_commands"), True)
+
+    def test_auto_command_mode_in_explain_only_previews_without_execution(self):
+        app = self._build_exec_app()
+        app.explain_only = True
+        app.openai_helper.get_commands.return_value = {
+            "response": "Preview only.",
+            "commands": [{"command": "ls -la", "description": "inspect files"}],
+        }
+        app.execute_commands = mock.Mock()
+
+        with mock.patch("builtins.print"):
+            app.auto_command_mode("show files")
+
+        app.execute_commands.assert_not_called()
+        app._print_commands_batch.assert_called_once()
+
+    def test_manual_command_mode_dry_run_skips_execution(self):
+        app = self._build_exec_app()
+        app.dry_run = True
+        app.session.prompt.side_effect = ["echo hello"]
+        app._prompt_yes_no = mock.Mock(return_value=True)
+        app._guard_command_with_safe_mode = mock.Mock(return_value=("echo hello", None))
+
+        with mock.patch("builtins.print"):
+            app.manual_command_mode()
+
+        app.command_helper.run_shell_command.assert_not_called()
+        app.interaction_logger.log_event.assert_any_call("command_previewed", {"command": "echo hello", "mode": "manual"})
 
 
 if __name__ == "__main__":

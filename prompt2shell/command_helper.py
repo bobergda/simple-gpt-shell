@@ -99,8 +99,11 @@ class CommandHelper:
         "-fls",
     }
 
+    def __init__(self, timeout_seconds=None):
+        self.timeout_seconds = timeout_seconds if timeout_seconds is not None else self._command_timeout_seconds_from_env()
+
     @staticmethod
-    def _command_timeout_seconds():
+    def _command_timeout_seconds_from_env():
         raw_timeout = os.getenv("PROMPT2SHELL_COMMAND_TIMEOUT", "300")
         try:
             timeout = int(raw_timeout)
@@ -265,8 +268,7 @@ class CommandHelper:
 
         process.kill()
 
-    @staticmethod
-    def run_shell_command(command):
+    def run_shell_command(self, command):
         popen_kwargs = {
             "args": command,
             "shell": True,
@@ -298,7 +300,7 @@ class CommandHelper:
         stdout_thread.start()
         stderr_thread.start()
 
-        timeout_seconds = CommandHelper._command_timeout_seconds()
+        timeout_seconds = self.timeout_seconds
         timed_out = False
         interrupted = False
 

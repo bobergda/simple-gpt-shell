@@ -1,5 +1,6 @@
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 from prompt_toolkit import ANSI, PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -13,14 +14,18 @@ from .common import APP_NAME, colored, env_flag
 class Application:
     """Main application class."""
 
-    def __init__(self, openai_helper, command_helper, interaction_logger):
+    def __init__(self, openai_helper, command_helper, interaction_logger, settings=None):
         """Initializes the application."""
+        self.settings = settings
         self.openai_helper = openai_helper
         self.command_helper = command_helper
         self.interaction_logger = interaction_logger
-        self.safe_mode_enabled = self._read_safe_mode_from_env()
-        self.safe_mode_strict = self._read_safe_mode_strict_from_env()
-        self.show_tokens = self._read_show_tokens_from_env()
+        self.safe_mode_enabled = self._read_safe_mode_default()
+        self.safe_mode_strict = self._read_safe_mode_strict_default()
+        self.show_tokens = self._read_show_tokens_default()
+        self.dry_run = bool(getattr(self.settings, "dry_run", env_flag("PROMPT2SHELL_DRY_RUN", False)))
+        self.explain_only = bool(getattr(self.settings, "explain_only", env_flag("PROMPT2SHELL_EXPLAIN_ONLY", False)))
+        self.session_report_file = getattr(self.settings, "session_report_file", None)
 
         default_history_path = FileHistoryPath.default()
         legacy_history_path = FileHistoryPath.legacy()
@@ -39,16 +44,19 @@ class Application:
             output=prompt_output,
         )
 
-    @staticmethod
-    def _read_safe_mode_from_env():
+    def _read_safe_mode_default(self):
+        if self.settings is not None and getattr(self.settings, "safe_mode", None) is not None:
+            return bool(self.settings.safe_mode)
         return env_flag("PROMPT2SHELL_SAFE_MODE", True)
 
-    @staticmethod
-    def _read_safe_mode_strict_from_env():
+    def _read_safe_mode_strict_default(self):
+        if self.settings is not None and getattr(self.settings, "safe_mode_strict", None) is not None:
+            return bool(self.settings.safe_mode_strict)
         return env_flag("PROMPT2SHELL_SAFE_MODE_STRICT", False)
 
-    @staticmethod
-    def _read_show_tokens_from_env():
+    def _read_show_tokens_default(self):
+        if self.settings is not None and getattr(self.settings, "show_tokens", None) is not None:
+            return bool(self.settings.show_tokens)
         return env_flag("PROMPT2SHELL_SHOW_TOKENS", True)
 
     def _safe_mode_status_text(self):
@@ -116,7 +124,36 @@ class Application:
         configure_context(
             safe_mode_enabled=self.safe_mode_enabled,
             strict_safe_mode=self.safe_mode_strict,
+            dry_run=getattr(self, "dry_run", False),
+            explain_only=getattr(self, "explain_only", False),
         )
+
+    def _build_report_metadata(self):
+        return {
+            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "model_name": getattr(self.openai_helper, "model_name", "unknown"),
+            "shell_name": getattr(self.openai_helper, "shell_name", "unknown"),
+            "os_name": getattr(self.openai_helper, "os_name", "unknown"),
+            "chat_language": getattr(self.openai_helper, "chat_language", "english"),
+            "safe_mode": self.safe_mode_enabled,
+            "safe_mode_strict": self.safe_mode_strict,
+            "show_tokens": self.show_tokens,
+            "dry_run": getattr(self, "dry_run", False),
+            "explain_only": getattr(self, "explain_only", False),
+            "session_report_file": getattr(self, "session_report_file", None),
+            "usage_summary": self.openai_helper.get_session_usage_summary(),
+        }
+
+    def _finalize_session_report(self):
+        if not getattr(self, "session_report_file", None):
+            return
+        report_path = self.interaction_logger.export_session_report(
+            report_file=self.session_report_file,
+            metadata=self._build_report_metadata(),
+        )
+        if report_path:
+            print(colored(f"Session report saved to: {report_path}", "cyan"))
+            self.interaction_logger.log_event("session_report_exported", {"path": report_path})
 
     def _print_commands_batch(self, commands):
         print(colored("\nProposed commands:", "green"))
@@ -297,6 +334,11 @@ class Application:
             )
             return
 
+        if getattr(self, "dry_run", False):
+            print(colored(f"Dry run: command not executed: {guarded_command}", "yellow"))
+            self.interaction_logger.log_event("command_previewed", {"command": guarded_command, "mode": "manual"})
+            return
+
         command_output = self.command_helper.run_shell_command(guarded_command)
         self.interaction_logger.log_event("command_executed", command_output)
         outputs = [command_output]
@@ -320,6 +362,11 @@ class Application:
 
         commands = commands_payload.get("commands") if commands_payload else None
         if commands:
+            if getattr(self, "explain_only", False):
+                self._print_commands_batch(commands)
+                print(colored("Explain-only mode: commands were not executed.", "yellow"))
+                self.interaction_logger.log_event("commands_previewed", {"count": len(commands), "mode": "explain_only"})
+                return
             self.execute_commands(commands)
         elif commands_payload and commands_payload.get("response"):
             print(colored("No commands proposed.", "yellow"))
@@ -418,6 +465,31 @@ class Application:
                         )
                         continue
 
+                    if getattr(self, "dry_run", False):
+                        print(colored(f"Dry run: command not executed: {guarded_command}", "yellow"))
+                        execution_record = {
+                            "command": guarded_command,
+                            "status": "dry_run",
+                            "returncode": None,
+                            "timed_out": False,
+                            "interrupted": False,
+                        }
+                        execution_summary.append(execution_record)
+                        outputs.append(
+                            {
+                                "command": guarded_command,
+                                "stdout": "",
+                                "stderr": "",
+                                "returncode": None,
+                                "timed_out": False,
+                                "interrupted": False,
+                                "dry_run": True,
+                            }
+                        )
+                        self.interaction_logger.log_event("command_previewed", execution_record)
+                        executed_any = True
+                        continue
+
                     output = self.command_helper.run_shell_command(guarded_command)
                     execution_record = {
                         "command": guarded_command,
@@ -450,6 +522,10 @@ class Application:
                     print(colored("No commands were executed.", "yellow"))
                     break
 
+                if getattr(self, "dry_run", False):
+                    print(colored("Dry run completed. No commands were executed.", "yellow"))
+                    break
+
                 self._sync_openai_session_context()
                 response, next_commands = self.openai_helper.send_commands_outputs(
                     outputs,
@@ -479,62 +555,95 @@ class Application:
         model_name = getattr(self.openai_helper, "model_name", "unknown")
         chat_language = getattr(self.openai_helper, "chat_language", "english")
         has_initial_prompt = isinstance(initial_prompt, str) and initial_prompt.strip() != ""
-        print(
-            colored(
-                f"Environment: shell={shell_name} | OS={os_name} | model={model_name} | chat language={chat_language}",
-                "green",
-            )
+        self.interaction_logger.log_event(
+            "session_started",
+            {
+                "shell_name": shell_name,
+                "os_name": os_name,
+                "model_name": model_name,
+                "chat_language": chat_language,
+                "dry_run": getattr(self, "dry_run", False),
+                "explain_only": getattr(self, "explain_only", False),
+            },
         )
-        if not has_initial_prompt:
-            print(colored("Type 'e' for manual mode, or 'q' to quit.\n", "green"))
-
-        if has_initial_prompt:
-            prompt_preview = initial_prompt
-            piped_marker = "\n\nPiped input:\n"
-            if piped_marker in prompt_preview:
-                prompt_preview = f"{prompt_preview.split(piped_marker, 1)[0]}\n\n[stdin attached]"
-            print(colored("Initial prompt:", "cyan"))
-            print(colored(prompt_preview, "white"))
-            print()
-            try:
-                if not self._process_user_input(initial_prompt):
-                    return
-            except subprocess.CalledProcessError as exc:
-                print(
-                    colored(f"Error: Command failed with exit code {exc.returncode}: {exc.output}", "red"),
-                    file=sys.stderr,
+        try:
+            print(
+                colored(
+                    f"Environment: shell={shell_name} | OS={os_name} | model={model_name} | chat language={chat_language}",
+                    "green",
                 )
-            except KeyboardInterrupt:
+            )
+            print(colored(f"Safe mode: {self._safe_mode_status_text()}", "green" if self.safe_mode_enabled else "yellow"))
+            print(
+                colored(
+                    f"Strict safe mode (read-only allowlist): {self._safe_mode_strict_status_text()}",
+                    "green" if self.safe_mode_strict else "yellow",
+                )
+            )
+            print(colored(f"Token usage display: {self._show_tokens_status_text()}", "green" if self.show_tokens else "yellow"))
+            dry_run_enabled = getattr(self, "dry_run", False)
+            explain_only_enabled = getattr(self, "explain_only", False)
+            print(colored(f"Dry run: {'ON' if dry_run_enabled else 'OFF'}", "yellow" if dry_run_enabled else "green"))
+            print(
+                colored(
+                    f"Explain-only mode: {'ON' if explain_only_enabled else 'OFF'}",
+                    "yellow" if explain_only_enabled else "green",
+                )
+            )
+            if getattr(self, "session_report_file", None):
+                print(colored(f"Session report: {self.session_report_file}", "cyan"))
+            if not has_initial_prompt:
+                print(colored("Type 'e' for manual mode, or 'q' to quit.\n", "green"))
+
+            if has_initial_prompt:
+                prompt_preview = initial_prompt
+                piped_marker = "\n\nPiped input:\n"
+                if piped_marker in prompt_preview:
+                    prompt_preview = f"{prompt_preview.split(piped_marker, 1)[0]}\n\n[stdin attached]"
+                print(colored("Initial prompt:", "cyan"))
+                print(colored(prompt_preview, "white"))
+                print()
+                try:
+                    if not self._process_user_input(initial_prompt):
+                        return
+                except subprocess.CalledProcessError as exc:
+                    print(
+                        colored(f"Error: Command failed with exit code {exc.returncode}: {exc.output}", "red"),
+                        file=sys.stderr,
+                    )
+                except KeyboardInterrupt:
+                    if exit_after_initial_prompt:
+                        return
+                except EOFError:
+                    return
+                except Exception as exc:  # pylint: disable=broad-except
+                    print(colored(f"Error of type {type(exc).__name__}: {exc}", "red"))
+                    print(colored("Exiting...", "yellow"))
+                    return
+
                 if exit_after_initial_prompt:
                     return
-            except EOFError:
-                return
-            except Exception as exc:  # pylint: disable=broad-except
-                print(colored(f"Error of type {type(exc).__name__}: {exc}", "red"))
-                print(colored("Exiting...", "yellow"))
-                return
 
-            if exit_after_initial_prompt:
-                return
-
-        while True:
-            try:
-                user_input = self.session.prompt(ANSI(colored(f"{APP_NAME}: ", "green")))
-                if not self._process_user_input(user_input):
+            while True:
+                try:
+                    user_input = self.session.prompt(ANSI(colored(f"{APP_NAME}: ", "green")))
+                    if not self._process_user_input(user_input):
+                        break
+                except subprocess.CalledProcessError as exc:
+                    print(
+                        colored(f"Error: Command failed with exit code {exc.returncode}: {exc.output}", "red"),
+                        file=sys.stderr,
+                    )
+                except KeyboardInterrupt:
+                    continue
+                except EOFError:
                     break
-            except subprocess.CalledProcessError as exc:
-                print(
-                    colored(f"Error: Command failed with exit code {exc.returncode}: {exc.output}", "red"),
-                    file=sys.stderr,
-                )
-            except KeyboardInterrupt:
-                continue
-            except EOFError:
-                break
-            except Exception as exc:  # pylint: disable=broad-except
-                print(colored(f"Error of type {type(exc).__name__}: {exc}", "red"))
-                print(colored("Exiting...", "yellow"))
-                break
+                except Exception as exc:  # pylint: disable=broad-except
+                    print(colored(f"Error of type {type(exc).__name__}: {exc}", "red"))
+                    print(colored("Exiting...", "yellow"))
+                    break
+        finally:
+            self._finalize_session_report()
 
 
 class FileHistoryPath:

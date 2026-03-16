@@ -11,9 +11,16 @@ from .os_helper import OSHelper
 class OpenAIHelper:
     """A class that handles OpenAI Responses API calls."""
 
-    def __init__(self, model_name="gpt-4o-mini", max_output_tokens=1200, interaction_logger=None):
+    def __init__(
+        self,
+        model_name="gpt-4o-mini",
+        max_output_tokens=1200,
+        interaction_logger=None,
+        api_key=None,
+        chat_language=None,
+    ):
         """Initialize OpenAI helper with server-side conversation memory."""
-        self.api_key = os.getenv("OPENAI_API_KEY", "")
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
         if self.api_key == "":
             print(colored("Error: OPENAI_API_KEY is not set", "red"), file=sys.stderr)
             raise SystemExit(1)
@@ -35,13 +42,15 @@ class OpenAIHelper:
             "Include a short description for each command. "
             "If no command is needed, return an empty commands list with a helpful response."
         )
-        self.chat_language = self._normalize_chat_language(
-            os.getenv("PROMPT2SHELL_CHAT_LANGUAGE", "english")
-        )
+        if chat_language is None:
+            chat_language = os.getenv("PROMPT2SHELL_CHAT_LANGUAGE", "english")
+        self.chat_language = self._normalize_chat_language(chat_language)
         self.session_once_mode = False
         self.session_has_piped_input = False
         self.session_safe_mode_enabled = True
         self.session_strict_safe_mode = False
+        self.session_dry_run = False
+        self.session_explain_only = False
 
         self.tools = [
             {
@@ -90,6 +99,8 @@ class OpenAIHelper:
         has_piped_input=None,
         safe_mode_enabled=None,
         strict_safe_mode=None,
+        dry_run=None,
+        explain_only=None,
     ):
         if once_mode is not None:
             self.session_once_mode = bool(once_mode)
@@ -99,6 +110,10 @@ class OpenAIHelper:
             self.session_safe_mode_enabled = bool(safe_mode_enabled)
         if strict_safe_mode is not None:
             self.session_strict_safe_mode = bool(strict_safe_mode)
+        if dry_run is not None:
+            self.session_dry_run = bool(dry_run)
+        if explain_only is not None:
+            self.session_explain_only = bool(explain_only)
 
     def _build_instructions(self):
         instructions_parts = [self.base_instructions]
@@ -124,6 +139,17 @@ class OpenAIHelper:
             instructions_parts.append(
                 "Session context: one-shot mode. "
                 "Prefer a direct final answer and avoid unnecessary follow-up command proposals."
+            )
+
+        if self.session_explain_only:
+            instructions_parts.append(
+                "Session context: explain-only mode. "
+                "The app will not execute commands. Provide clear command rationale and keep follow-up focused on explanation."
+            )
+        elif self.session_dry_run:
+            instructions_parts.append(
+                "Session context: dry-run mode. "
+                "The app may preview commands, but it will not execute them."
             )
 
         if self.chat_language == "polish":

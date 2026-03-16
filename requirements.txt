@@ -2,3 +2,4 @@ openai==2.20.0
 termcolor==3.3.0
 distro==1.9.0
 prompt_toolkit==3.0.52
+tomli==2.3.0

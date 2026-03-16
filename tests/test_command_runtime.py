@@ -23,7 +23,7 @@ class CommandRuntimeTests(unittest.TestCase):
                 "p=subprocess.Popen(['sleep','30']); "
                 'print(p.pid); sys.stdout.flush(); time.sleep(30)"'
             )
-            result = CommandHelper.run_shell_command(command)
+            result = CommandHelper(timeout_seconds=1).run_shell_command(command)
         finally:
             if previous_timeout is None:
                 os.environ.pop("PROMPT2SHELL_COMMAND_TIMEOUT", None)
@@ -77,7 +77,7 @@ class CommandRuntimeTests(unittest.TestCase):
 
         with mock.patch("prompt2shell.command_helper.subprocess.Popen", return_value=fake_process):
             with mock.patch.object(CommandHelper, "_terminate_process_tree") as terminate_process_tree:
-                result = CommandHelper.run_shell_command("echo hello")
+                result = CommandHelper(timeout_seconds=300).run_shell_command("echo hello")
 
         terminate_process_tree.assert_called_once_with(fake_process)
         self.assertTrue(result["interrupted"])
