@@ -1,8 +1,19 @@
 import json
 import os
 import sys
+import time
 
-from openai import OpenAI
+from openai import (
+    APIConnectionError,
+    APIResponseValidationError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    OpenAI,
+    PermissionDeniedError,
+    RateLimitError,
+)
 
 from .common import colored
 from .os_helper import OSHelper
@@ -18,6 +29,8 @@ class OpenAIHelper:
         interaction_logger=None,
         api_key=None,
         chat_language=None,
+        max_retries=2,
+        retry_base_seconds=1.0,
     ):
         """Initialize OpenAI helper with server-side conversation memory."""
         self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
@@ -30,6 +43,8 @@ class OpenAIHelper:
         self.max_output_tokens = max_output_tokens
         self.last_response_id = None
         self.interaction_logger = interaction_logger
+        self.max_retries = max(0, int(max_retries))
+        self.retry_base_seconds = retry_base_seconds if retry_base_seconds > 0 else 1.0
         self.last_usage_summary = None
         self.session_usage_summary = self._empty_usage_summary()
         self._active_usage_summary = None
@@ -51,6 +66,7 @@ class OpenAIHelper:
         self.session_strict_safe_mode = False
         self.session_dry_run = False
         self.session_explain_only = False
+        self.session_profile = "safe-edit"
 
         self.tools = [
             {
@@ -101,6 +117,7 @@ class OpenAIHelper:
         strict_safe_mode=None,
         dry_run=None,
         explain_only=None,
+        profile=None,
     ):
         if once_mode is not None:
             self.session_once_mode = bool(once_mode)
@@ -114,6 +131,8 @@ class OpenAIHelper:
             self.session_dry_run = bool(dry_run)
         if explain_only is not None:
             self.session_explain_only = bool(explain_only)
+        if profile is not None:
+            self.session_profile = str(profile)
 
     def _build_instructions(self):
         instructions_parts = [self.base_instructions]
@@ -128,6 +147,8 @@ class OpenAIHelper:
                 "Session context: safe mode is ON. "
                 "Avoid destructive commands and prefer low-risk alternatives."
             )
+
+        instructions_parts.append(f"Session profile: `{self.session_profile}`.")
 
         if self.session_has_piped_input:
             instructions_parts.append(
@@ -232,6 +253,37 @@ class OpenAIHelper:
             return
         self.interaction_logger.log_event(event_name, payload)
 
+    @staticmethod
+    def _retry_delay_for_attempt(attempt_number, base_seconds):
+        return base_seconds * (2 ** max(0, attempt_number - 1))
+
+    @staticmethod
+    def _is_retryable_error(exc):
+        if isinstance(exc, (RateLimitError, APIConnectionError, APITimeoutError, APIResponseValidationError)):
+            return True
+        if isinstance(exc, APIStatusError):
+            return getattr(exc, "status_code", 0) >= 500
+        return False
+
+    @staticmethod
+    def _format_openai_error(exc):
+        if isinstance(exc, AuthenticationError):
+            return "OpenAI authentication failed. Check OPENAI_API_KEY."
+        if isinstance(exc, PermissionDeniedError):
+            return "OpenAI request was denied. Verify project permissions and model access."
+        if isinstance(exc, BadRequestError):
+            return f"OpenAI rejected the request as invalid: {exc}"
+        if isinstance(exc, RateLimitError):
+            return "OpenAI rate limit reached. The client retried automatically but still ran out of attempts."
+        if isinstance(exc, APITimeoutError):
+            return "OpenAI request timed out after multiple attempts."
+        if isinstance(exc, APIConnectionError):
+            return "OpenAI connection failed after retry attempts."
+        if isinstance(exc, APIStatusError):
+            status_code = getattr(exc, "status_code", "unknown")
+            return f"OpenAI API returned status {status_code}."
+        return f"OpenAI request failed: {exc}"
+
     def _create_response(self, input_data, tool_choice="auto"):
         request = {
             "model": self.model_name,
@@ -252,10 +304,37 @@ class OpenAIHelper:
                 "tool_choice": request["tool_choice"],
                 "has_previous_response_id": "previous_response_id" in request,
                 "input": input_data,
+                "max_retries": self.max_retries,
             },
         )
 
-        response = self.client.responses.create(**request)
+        response = None
+        last_error = None
+        for attempt in range(1, self.max_retries + 2):
+            try:
+                response = self.client.responses.create(**request)
+                break
+            except Exception as exc:  # pylint: disable=broad-except
+                last_error = exc
+                retryable = self._is_retryable_error(exc)
+                will_retry = retryable and attempt <= self.max_retries
+                self._log_api_event(
+                    "api_error",
+                    {
+                        "attempt": attempt,
+                        "retryable": retryable,
+                        "will_retry": will_retry,
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                )
+                if not will_retry:
+                    raise
+                delay = self._retry_delay_for_attempt(attempt, self.retry_base_seconds)
+                self._log_api_event("api_retry_scheduled", {"attempt": attempt, "delay_seconds": delay})
+                time.sleep(delay)
+        if response is None:
+            raise last_error
         self.last_response_id = response.id
         usage_summary = self._extract_usage_summary(response)
         self._record_usage_summary(usage_summary)
@@ -394,7 +473,7 @@ class OpenAIHelper:
             _, commands_payload = self._resolve_function_calls(response)
             return commands_payload
         except Exception as exc:  # pylint: disable=broad-except
-            print(colored(f"Error: {exc}", "red"), file=sys.stderr)
+            print(colored(f"Error: {self._format_openai_error(exc)}", "red"), file=sys.stderr)
             return None
         finally:
             self._finish_usage_capture()
@@ -439,7 +518,7 @@ class OpenAIHelper:
 
             return response_text, next_commands
         except Exception as exc:  # pylint: disable=broad-except
-            print(colored(f"Error: {exc}", "red"), file=sys.stderr)
+            print(colored(f"Error: {self._format_openai_error(exc)}", "red"), file=sys.stderr)
             return None, None
         finally:
             self._finish_usage_capture()

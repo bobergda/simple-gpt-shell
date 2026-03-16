@@ -99,8 +99,49 @@ class CommandHelper:
         "-fls",
     }
 
+    PIPELINE_SEPARATORS = {"|", ";", "&&", "||"}
+
     def __init__(self, timeout_seconds=None):
         self.timeout_seconds = timeout_seconds if timeout_seconds is not None else self._command_timeout_seconds_from_env()
+
+    @staticmethod
+    def _split_unquoted(text, delimiter):
+        parts = []
+        current = []
+        single_quote = False
+        double_quote = False
+        index = 0
+        while index < len(text):
+            char = text[index]
+            if char == "'" and not double_quote:
+                single_quote = not single_quote
+            elif char == '"' and not single_quote:
+                double_quote = not double_quote
+            if not single_quote and not double_quote and text.startswith(delimiter, index):
+                parts.append("".join(current).strip())
+                current = []
+                index += len(delimiter)
+                continue
+            current.append(char)
+            index += 1
+        parts.append("".join(current).strip())
+        return parts
+
+    @staticmethod
+    def _contains_unquoted_sequence(text, sequence):
+        single_quote = False
+        double_quote = False
+        index = 0
+        while index < len(text):
+            char = text[index]
+            if char == "'" and not double_quote:
+                single_quote = not single_quote
+            elif char == '"' and not single_quote:
+                double_quote = not double_quote
+            if not single_quote and not double_quote and text.startswith(sequence, index):
+                return True
+            index += 1
+        return False
 
     @staticmethod
     def _command_timeout_seconds_from_env():
@@ -116,6 +157,9 @@ class CommandHelper:
         if not isinstance(command, str) or command.strip() == "":
             return None
         normalized = command.strip()
+        tokenized_reason = CommandHelper._detect_destructive_command_tokenized(normalized)
+        if tokenized_reason is not None:
+            return tokenized_reason
         for pattern, reason in CommandHelper.DESTRUCTIVE_COMMAND_PATTERNS:
             if pattern.search(normalized):
                 return reason
@@ -147,6 +191,74 @@ class CommandHelper:
         return executable, args, None
 
     @staticmethod
+    def _unwrap_wrappers(executable, args):
+        lowered_exec = executable.lower()
+        remaining_args = list(args)
+        wrapper_commands = {"sudo", "command", "builtin", "env"}
+
+        while lowered_exec in wrapper_commands:
+            if lowered_exec == "env":
+                while remaining_args and CommandHelper._is_env_assignment(remaining_args[0]):
+                    remaining_args.pop(0)
+            if not remaining_args:
+                break
+            executable = os.path.basename(remaining_args[0])
+            remaining_args = remaining_args[1:]
+            lowered_exec = executable.lower()
+
+        return executable, remaining_args
+
+    @staticmethod
+    def _detect_destructive_command_tokenized(command):
+        if CommandHelper._contains_unquoted_sequence(command, ">|"):
+            return "shell redirection overwrite"
+
+        segments = CommandHelper._split_unquoted(command, "|")
+        for segment in segments:
+            executable, args, parse_error = CommandHelper._extract_executable(segment)
+            if parse_error is not None:
+                continue
+
+            executable, args = CommandHelper._unwrap_wrappers(executable, args)
+            lowered_exec = executable.lower()
+            lowered_args = [arg.lower() for arg in args]
+
+            if lowered_exec == "rm":
+                if "--no-preserve-root" in lowered_args or "--preserve-root=0" in lowered_args:
+                    return "rm with preserve-root disabled"
+                if any(arg in {"-rf", "-fr", "-r", "-f", "--recursive", "--force"} for arg in lowered_args):
+                    return "rm with recursive/force options"
+
+            if lowered_exec == "find":
+                if any(arg in {"-delete", "-exec", "-execdir", "-ok", "-okdir"} for arg in lowered_args):
+                    return "find with destructive action"
+
+            if lowered_exec == "xargs" and any(arg in {"rm", "shred", "wipefs"} for arg in lowered_args):
+                return "xargs invoking destructive command"
+
+            if lowered_exec.startswith("mkfs"):
+                return "filesystem format command"
+            if lowered_exec == "dd" and any(arg.startswith("of=/dev/") for arg in lowered_args):
+                return "dd write to block device"
+            if lowered_exec in {"shred", "wipefs"}:
+                return f"{lowered_exec} destructive command"
+            if lowered_exec == "git" and args:
+                git_subcommand = args[0].lower()
+                git_args = [arg.lower() for arg in args[1:]]
+                if git_subcommand == "reset" and "--hard" in git_args:
+                    return "git hard reset"
+                if git_subcommand == "clean" and any("f" in arg and arg.startswith("-") for arg in git_args):
+                    return "git clean with force"
+            if lowered_exec == "docker" and len(args) >= 2:
+                docker_command = f"{args[0].lower()} {args[1].lower()}"
+                if docker_command == "system prune":
+                    return "docker prune"
+            if lowered_exec in {"chmod", "chown"} and any(arg in {"-r", "-R", "--recursive"} for arg in lowered_args):
+                return f"{lowered_exec} recursive permissions change"
+
+        return None
+
+    @staticmethod
     def detect_non_readonly_command(command):
         if not isinstance(command, str) or command.strip() == "":
             return "empty command"
@@ -155,22 +267,28 @@ class CommandHelper:
 
         if "\n" in normalized:
             return "multiline commands are blocked in strict safe mode"
-        if "&&" in normalized or "||" in normalized or ";" in normalized:
+        if CommandHelper._contains_unquoted_sequence(normalized, "&&") or CommandHelper._contains_unquoted_sequence(normalized, "||") or CommandHelper._contains_unquoted_sequence(normalized, ";"):
             return "command chaining operators are blocked in strict safe mode"
-        if "`" in normalized or "$(" in normalized:
+        if CommandHelper._contains_unquoted_sequence(normalized, "`") or CommandHelper._contains_unquoted_sequence(normalized, "$("):
             return "command substitution is blocked in strict safe mode"
-        if "|&" in normalized:
+        if CommandHelper._contains_unquoted_sequence(normalized, "|&"):
             return "stderr pipe redirection is blocked in strict safe mode"
-        if ">" in normalized:
+        if CommandHelper._contains_unquoted_sequence(normalized, ">"):
             return "output redirection is blocked in strict safe mode"
-        if "<&" in normalized or "<>" in normalized or "<<" in normalized:
+        if (
+            CommandHelper._contains_unquoted_sequence(normalized, "<&")
+            or CommandHelper._contains_unquoted_sequence(normalized, "<>")
+            or CommandHelper._contains_unquoted_sequence(normalized, "<<")
+            or CommandHelper._contains_unquoted_sequence(normalized, "<")
+        ):
             return "advanced redirection is blocked in strict safe mode"
 
-        for segment in (part.strip() for part in normalized.split("|")):
+        for segment in CommandHelper._split_unquoted(normalized, "|"):
             executable, args, parse_error = CommandHelper._extract_executable(segment)
             if parse_error is not None:
                 return parse_error
 
+            executable, args = CommandHelper._unwrap_wrappers(executable, args)
             lowered_exec = executable.lower()
             if lowered_exec not in CommandHelper.STRICT_SAFE_MODE_READ_ONLY_COMMANDS:
                 return f"command `{executable}` is not in strict read-only allowlist"

@@ -18,11 +18,15 @@ class AppConfigTests(unittest.TestCase):
                         [openai]
                         model = "gpt-5-mini"
                         chat_language = "polish"
+                        max_retries = 4
+                        retry_base_seconds = 0.5
 
                         [app]
+                        profile = "inspect"
                         max_output_tokens = 2048
                         safe_mode = false
                         dry_run = true
+                        json_mode = true
 
                         [logging]
                         enabled = true
@@ -36,11 +40,17 @@ class AppConfigTests(unittest.TestCase):
 
             config = load_app_config({"config_file": config_path})
 
+        self.assertEqual(config.profile, "inspect")
         self.assertEqual(config.openai_model, "gpt-5-mini")
         self.assertEqual(config.chat_language, "polish")
+        self.assertEqual(config.api_max_retries, 4)
+        self.assertEqual(config.api_retry_base_seconds, 0.5)
         self.assertEqual(config.max_output_tokens, 2048)
         self.assertFalse(config.safe_mode)
         self.assertTrue(config.dry_run)
+        self.assertTrue(config.json_mode)
+        self.assertTrue(config.once_mode)
+        self.assertFalse(config.show_tokens)
         self.assertTrue(config.log_enabled)
         self.assertTrue(config.log_file.endswith("custom.log"))
         self.assertTrue(config.session_report_file.endswith("report.md"))
@@ -79,6 +89,15 @@ class AppConfigTests(unittest.TestCase):
 
         self.assertEqual(config.openai_model, "gpt-cli")
         self.assertTrue(config.dry_run)
+
+    def test_profile_defaults_apply_when_fields_not_overridden(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            config = load_app_config({"profile": "full"})
+
+        self.assertEqual(config.profile, "full")
+        self.assertFalse(config.safe_mode)
+        self.assertFalse(config.safe_mode_strict)
+        self.assertFalse(config.dry_run)
 
 
 if __name__ == "__main__":

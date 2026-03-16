@@ -140,9 +140,11 @@ Maintenance options:
 
 Runtime options:
   -o, --once              Exit after processing the initial prompt
+  --profile=NAME          Use profile inspect, safe-edit, or full
   --model=NAME            Override OpenAI model for this run
   --tokens=NUMBER         Override max output tokens for this run
   --config=PATH           Use a specific TOML config file
+  --json                  Emit machine-readable JSON and avoid interactive execution
   --dry-run               Preview commands without executing them
   --explain-only          Show explanation and proposed commands without execution
   --report[=PATH]         Write a Markdown session report
@@ -150,6 +152,8 @@ Runtime options:
 
 Examples:
   ./prompt2shell.sh "find 3 largest files"
+  ./prompt2shell.sh --profile=inspect "inspect this repository"
+  ./prompt2shell.sh --json "inspect git status"
   ./prompt2shell.sh --dry-run "inspect recent logs"
   ./prompt2shell.sh --report ./logs/reports/run.md "summarize git status"
   ls | ./prompt2shell.sh

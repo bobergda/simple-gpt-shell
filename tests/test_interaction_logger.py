@@ -35,6 +35,22 @@ class InteractionLoggerTests(unittest.TestCase):
             self.assertIn("<REDACTED>", entry["text"])
             self.assertNotIn("secret-token", entry["text"])
 
+    def test_entries_include_session_id_and_can_be_filtered(self):
+        logger = InteractionLogger(enabled=False)
+        logger.log("user", "hello")
+        logger.log_event("command_previewed", {"command": "ls"})
+
+        all_entries = logger.get_session_entries()
+        user_entries = logger.get_session_entries(role="user")
+        preview_entries = logger.get_session_entries(event_name="command_previewed")
+
+        self.assertEqual(len(all_entries), 2)
+        self.assertTrue(all(entry["session_id"] == logger.session_id for entry in all_entries))
+        self.assertEqual(len(user_entries), 1)
+        self.assertEqual(user_entries[0]["role"], "user")
+        self.assertEqual(len(preview_entries), 1)
+        self.assertEqual(preview_entries[0]["event"], "command_previewed")
+
 
 if __name__ == "__main__":
     unittest.main()

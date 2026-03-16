@@ -21,8 +21,10 @@ class ApplicationRunBannerTests(unittest.TestCase):
         app.safe_mode_enabled = True
         app.safe_mode_strict = False
         app.show_tokens = True
+        app.profile = "safe-edit"
         app.dry_run = False
         app.explain_only = False
+        app.json_mode = False
         app.session_report_file = None
         return app
 
@@ -127,8 +129,10 @@ class ApplicationCommandSelectionTests(unittest.TestCase):
         app.safe_mode_enabled = True
         app.safe_mode_strict = False
         app.show_tokens = True
+        app.profile = "safe-edit"
         app.dry_run = False
         app.explain_only = False
+        app.json_mode = False
         app.session_report_file = None
         return app
 
@@ -265,6 +269,56 @@ class ApplicationCommandSelectionTests(unittest.TestCase):
 
         app.command_helper.run_shell_command.assert_not_called()
         app.interaction_logger.log_event.assert_any_call("command_previewed", {"command": "echo hello", "mode": "manual"})
+
+    def test_profile_runtime_command_switches_modes(self):
+        app = self._build_exec_app()
+
+        with mock.patch("builtins.print"):
+            handled = app._handle_runtime_command("profile inspect")
+
+        self.assertTrue(handled)
+        self.assertEqual(app.profile, "inspect")
+        self.assertTrue(app.safe_mode_enabled)
+        self.assertTrue(app.safe_mode_strict)
+        self.assertTrue(app.dry_run)
+
+
+class ApplicationJsonModeTests(unittest.TestCase):
+    def test_run_json_emits_machine_readable_payload(self):
+        app = Application.__new__(Application)
+        app.openai_helper = mock.Mock()
+        app.openai_helper.os_name = "Linux"
+        app.openai_helper.shell_name = "bash"
+        app.openai_helper.model_name = "gpt-test"
+        app.openai_helper.chat_language = "english"
+        app.openai_helper.get_commands.return_value = {
+            "response": "Inspect files first.",
+            "commands": [{"command": "ls -la", "description": "List files"}],
+        }
+        app.openai_helper.get_session_usage_summary.return_value = {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3, "api_calls": 1}
+        app.interaction_logger = mock.Mock()
+        app.interaction_logger.session_id = "session-123"
+        app.command_helper = mock.Mock()
+        app.profile = "inspect"
+        app.safe_mode_enabled = True
+        app.safe_mode_strict = True
+        app.show_tokens = False
+        app.dry_run = True
+        app.explain_only = False
+        app.json_mode = True
+        app.session_report_file = None
+        app._sync_openai_session_context = mock.Mock()
+        app._finalize_session_report = mock.Mock()
+        app._log_session_started = mock.Mock()
+
+        with mock.patch("builtins.print") as print_mock:
+            app.run_json(initial_prompt="inspect repo")
+
+        emitted = print_mock.call_args.args[0]
+        self.assertIn('"ok": true', emitted)
+        self.assertIn('"session_id": "session-123"', emitted)
+        self.assertIn('"command": "ls -la"', emitted)
+        app._finalize_session_report.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -97,7 +97,17 @@ class MainEntrypointTests(unittest.TestCase):
         fake_openai_helper.configure_session_context.assert_called_once_with(
             once_mode=True,
             has_piped_input=True,
+            profile="safe-edit",
         )
+
+    def test_main_routes_json_mode_to_run_json(self):
+        fake_app = mock.Mock()
+        with self._stdin_patch(is_tty=True):
+            with mock.patch("prompt2shell.main.build_application", return_value=fake_app):
+                main_module.main(["--json", "summarize", "status"])
+
+        fake_app.run_json.assert_called_once_with(initial_prompt="summarize status")
+        fake_app.run.assert_not_called()
 
     def test_infer_piped_source_description_detects_ls_long_listing(self):
         piped_text = (

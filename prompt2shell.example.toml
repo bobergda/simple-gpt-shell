@@ -2,8 +2,11 @@
 api_key = ""
 model = "gpt-4o-mini"
 chat_language = "english"
+max_retries = 2
+retry_base_seconds = 1.0
 
 [app]
+profile = "safe-edit"
 max_output_tokens = 1200
 safe_mode = true
 strict_safe_mode = false
@@ -12,6 +15,7 @@ command_timeout = 300
 once_mode = false
 dry_run = false
 explain_only = false
+json_mode = false
 
 [logging]
 enabled = false

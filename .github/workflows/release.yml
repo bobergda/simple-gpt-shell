@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install build
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Build artifacts
+        run: python -m build
+
+      - name: Prepare release notes from changelog
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          tag = os.environ["RELEASE_TAG"]
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          headers = [f"## [{tag}]", f"## {tag}", "## [Unreleased]", "## Unreleased"]
+          selected = None
+          for header in headers:
+              marker = f"\n{header}\n"
+              start = changelog.find(marker)
+              if start == -1 and changelog.startswith(header + "\n"):
+                  start = 0
+              if start == -1:
+                  continue
+              body_start = start + len(header) + (0 if start == 0 else 1) + 1
+              next_header = changelog.find("\n## ", body_start)
+              selected = changelog[body_start: next_header if next_header != -1 else None].strip()
+              if selected:
+                  break
+          if not selected:
+              selected = "Release notes were not found in CHANGELOG.md."
+          Path("release-notes.md").write_text(selected + "\n", encoding="utf-8")
+          PY
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          files: |
+            dist/*.tar.gz
+            dist/*.whl

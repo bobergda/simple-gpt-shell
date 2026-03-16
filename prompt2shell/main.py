@@ -20,9 +20,11 @@ def build_argument_parser():
     )
     parser.add_argument("prompt", nargs="*", help="Initial prompt to send to the assistant.")
     parser.add_argument("-o", "--once", action="store_true", default=None, help="Exit after processing the initial prompt.")
+    parser.add_argument("--profile", choices=["inspect", "safe-edit", "full"], help="Execution profile preset.")
     parser.add_argument("--model", dest="openai_model", help="Override the OpenAI model for this run.")
     parser.add_argument("--tokens", dest="max_output_tokens", type=int, help="Set max output tokens for this run.")
     parser.add_argument("--config", dest="config_file", help="Path to a TOML config file.")
+    parser.add_argument("--json", action="store_true", default=None, dest="json_mode", help="Emit machine-readable JSON and avoid interactive execution.")
     parser.add_argument("--dry-run", action="store_true", default=None, help="Preview commands without executing them.")
     parser.add_argument(
         "--explain-only",
@@ -45,9 +47,11 @@ def parse_runtime_args(argv=None):
     parsed = parser.parse_args(argv)
     cli_overrides = {
         "config_file": parsed.config_file,
+        "profile": parsed.profile,
         "openai_model": parsed.openai_model,
         "max_output_tokens": parsed.max_output_tokens,
         "once_mode": parsed.once,
+        "json_mode": parsed.json_mode,
         "dry_run": parsed.dry_run,
         "explain_only": parsed.explain_only,
     }
@@ -147,6 +151,8 @@ def build_application(config):
         interaction_logger=interaction_logger,
         api_key=config.openai_api_key,
         chat_language=config.chat_language,
+        max_retries=config.api_max_retries,
+        retry_base_seconds=config.api_retry_base_seconds,
     )
     command_helper = CommandHelper(timeout_seconds=config.command_timeout)
     return Application(openai_helper, command_helper, interaction_logger, settings=config)
@@ -170,6 +176,7 @@ def main(argv=None):
         context_kwargs = {
             "once_mode": config.once_mode,
             "has_piped_input": piped_input is not None,
+            "profile": config.profile,
         }
         if config.dry_run:
             context_kwargs["dry_run"] = True
@@ -178,6 +185,10 @@ def main(argv=None):
         configure_context(
             **context_kwargs,
         )
+
+    if config.json_mode:
+        app.run_json(initial_prompt=initial_prompt)
+        return
 
     app.run(initial_prompt=initial_prompt, exit_after_initial_prompt=config.once_mode)
 

@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,6 +30,7 @@ class InteractionLogger:
         self._lock = threading.Lock()
         self.session_entries = []
         self.session_started_at = datetime.now(timezone.utc).isoformat()
+        self.session_id = uuid.uuid4().hex
 
         if not self.enabled:
             return
@@ -78,6 +80,7 @@ class InteractionLogger:
 
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "session_id": self.session_id,
             "role": role,
             "text": self._sanitize_for_log(text),
         }
@@ -93,6 +96,7 @@ class InteractionLogger:
 
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "session_id": self.session_id,
             "type": "event",
             "event": event_name,
             "data": self._sanitize_for_log(data),
@@ -103,8 +107,15 @@ class InteractionLogger:
         except OSError as exc:
             print(colored(f"Warning: unable to write log: {exc}", "yellow"), file=sys.stderr)
 
-    def get_session_entries(self):
-        return list(self.session_entries)
+    def get_session_entries(self, session_id=None, role=None, event_name=None):
+        entries = list(self.session_entries)
+        if session_id is not None:
+            entries = [entry for entry in entries if entry.get("session_id") == session_id]
+        if role is not None:
+            entries = [entry for entry in entries if entry.get("role") == role]
+        if event_name is not None:
+            entries = [entry for entry in entries if entry.get("event") == event_name]
+        return entries
 
     def export_session_report(self, report_file=None, metadata=None):
         metadata = self._sanitize_for_log(metadata or {})
@@ -118,6 +129,7 @@ class InteractionLogger:
         lines = [
             f"# {APP_NAME} Session Report",
             "",
+            f"- Session ID: `{self.session_id}`",
             f"- Started: {self.session_started_at}",
         ]
         if metadata.get("ended_at"):
@@ -130,12 +142,15 @@ class InteractionLogger:
             lines.append(f"- OS: `{metadata['os_name']}`")
         if metadata.get("chat_language"):
             lines.append(f"- Chat language: `{metadata['chat_language']}`")
+        if metadata.get("profile"):
+            lines.append(f"- Profile: `{metadata['profile']}`")
         lines.extend(
             [
                 f"- Safe mode: `{metadata.get('safe_mode', False)}`",
                 f"- Strict safe mode: `{metadata.get('safe_mode_strict', False)}`",
                 f"- Dry run: `{metadata.get('dry_run', False)}`",
                 f"- Explain only: `{metadata.get('explain_only', False)}`",
+                f"- JSON mode: `{metadata.get('json_mode', False)}`",
                 "",
                 "## Timeline",
                 "",

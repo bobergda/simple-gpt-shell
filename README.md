@@ -9,6 +9,8 @@ This version uses the OpenAI **Responses API** with server-side conversation cha
 - Function calling for structured command suggestions (`get_commands`)
 - Manual mode and guided execution mode
 - `--dry-run` and `--explain-only` preview modes
+- `--json` mode for automation and scripting
+- Execution profiles: `inspect`, `safe-edit`, `full`
 - Follow-up analysis of command output
 - Safe mode with destructive-command detection
 - Optional strict safe mode (read-only allowlist)
@@ -16,9 +18,11 @@ This version uses the OpenAI **Responses API** with server-side conversation cha
 - Opt-in JSONL logging with basic secret redaction and restrictive file permissions (`0600`)
 - Optional TOML config file in `~/.config/prompt2shell/config.toml`
 - Optional Markdown session reports via `--report`
+- Session-aware logging and reports with `session_id`
 - Installable Python package with `prompt2shell` console script
 - Modular code layout in `prompt2shell/` for easier maintenance and testing
 - GitHub Actions workflow for CI
+- GitHub release workflow for tagged artifacts
 
 ## Usage
 
@@ -59,6 +63,10 @@ This version uses the OpenAI **Responses API** with server-side conversation cha
    ```shell
    ./prompt2shell.sh --dry-run "show large files and explain why"
    ```
+   JSON automation mode:
+   ```shell
+   ./prompt2shell.sh --json "inspect git status and suggest next command"
+   ```
    Explain-only preview:
    ```shell
    ./prompt2shell.sh --explain-only "how would you inspect disk usage here?"
@@ -90,7 +98,9 @@ Script options:
 ./prompt2shell.sh --add-alias
 ./prompt2shell.sh -o "find the 3 biggest files in this project"
 ./prompt2shell.sh --once "find the 3 biggest files in this project"
+./prompt2shell.sh --profile=inspect "inspect this repository"
 ./prompt2shell.sh --dry-run "find the 3 biggest files in this project"
+./prompt2shell.sh --json "inspect recent logs"
 ./prompt2shell.sh --explain-only "find the 3 biggest files in this project"
 ./prompt2shell.sh --report ./logs/reports/run.md "find the 3 biggest files in this project"
 ./prompt2shell.sh -m5 "find the 3 biggest files in this project"
@@ -115,8 +125,12 @@ export PROMPT2SHELL_SAFE_MODE_STRICT=0
 export PROMPT2SHELL_SHOW_TOKENS=1
 export PROMPT2SHELL_MAX_OUTPUT_TOKENS=1200
 export PROMPT2SHELL_COMMAND_TIMEOUT=300
+export PROMPT2SHELL_PROFILE="safe-edit"
+export PROMPT2SHELL_OPENAI_MAX_RETRIES=2
+export PROMPT2SHELL_OPENAI_RETRY_BASE_SECONDS=1.0
 export PROMPT2SHELL_DRY_RUN=0
 export PROMPT2SHELL_EXPLAIN_ONLY=0
+export PROMPT2SHELL_JSON=0
 export PROMPT2SHELL_SESSION_REPORT_FILE="./logs/reports/latest-session.md"
 ```
 
@@ -127,8 +141,11 @@ Example config file (`~/.config/prompt2shell/config.toml`):
 api_key = ""
 model = "gpt-4o-mini"
 chat_language = "english"
+max_retries = 2
+retry_base_seconds = 1.0
 
 [app]
+profile = "safe-edit"
 max_output_tokens = 1200
 safe_mode = true
 strict_safe_mode = false
@@ -136,6 +153,7 @@ show_tokens = true
 command_timeout = 300
 dry_run = false
 explain_only = false
+json_mode = false
 
 [logging]
 enabled = false
@@ -154,8 +172,10 @@ Environment: shell=bash | OS=Linux Ubuntu | model=gpt-4o-mini | chat language=en
 Safe mode: ON (use `safe on`, `safe off`, `safe`).
 Strict safe mode (read-only allowlist): OFF (use `strict on`, `strict off`, `strict`).
 Token usage display: ON (use `tokens on`, `tokens off`, `tokens`).
+Profile: safe-edit
 Dry run: OFF
 Explain-only mode: OFF
+JSON mode: OFF
 Type 'e' for manual mode, or 'q' to quit.
 ```
 

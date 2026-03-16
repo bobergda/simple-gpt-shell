@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -9,6 +10,7 @@ from prompt_toolkit.input.defaults import create_input
 from prompt_toolkit.output.defaults import create_output
 
 from .common import APP_NAME, colored, env_flag
+from .config import PROFILE_DEFAULTS, VALID_PROFILES
 
 
 class Application:
@@ -23,8 +25,10 @@ class Application:
         self.safe_mode_enabled = self._read_safe_mode_default()
         self.safe_mode_strict = self._read_safe_mode_strict_default()
         self.show_tokens = self._read_show_tokens_default()
+        self.profile = getattr(self.settings, "profile", "safe-edit")
         self.dry_run = bool(getattr(self.settings, "dry_run", env_flag("PROMPT2SHELL_DRY_RUN", False)))
         self.explain_only = bool(getattr(self.settings, "explain_only", env_flag("PROMPT2SHELL_EXPLAIN_ONLY", False)))
+        self.json_mode = bool(getattr(self.settings, "json_mode", env_flag("PROMPT2SHELL_JSON", False)))
         self.session_report_file = getattr(self.settings, "session_report_file", None)
 
         default_history_path = FileHistoryPath.default()
@@ -126,6 +130,7 @@ class Application:
             strict_safe_mode=self.safe_mode_strict,
             dry_run=getattr(self, "dry_run", False),
             explain_only=getattr(self, "explain_only", False),
+            profile=getattr(self, "profile", "safe-edit"),
         )
 
     def _build_report_metadata(self):
@@ -138,11 +143,64 @@ class Application:
             "safe_mode": self.safe_mode_enabled,
             "safe_mode_strict": self.safe_mode_strict,
             "show_tokens": self.show_tokens,
+            "profile": getattr(self, "profile", "safe-edit"),
             "dry_run": getattr(self, "dry_run", False),
             "explain_only": getattr(self, "explain_only", False),
+            "json_mode": getattr(self, "json_mode", False),
             "session_report_file": getattr(self, "session_report_file", None),
+            "session_id": getattr(self.interaction_logger, "session_id", None),
             "usage_summary": self.openai_helper.get_session_usage_summary(),
         }
+
+    def _set_profile(self, profile_name):
+        normalized_profile = str(profile_name or "").strip().lower()
+        if normalized_profile not in VALID_PROFILES:
+            print(colored(f"Unknown profile: {profile_name}", "yellow"))
+            return False
+
+        profile_defaults = PROFILE_DEFAULTS[normalized_profile]
+        self.profile = normalized_profile
+        self.safe_mode_enabled = profile_defaults["safe_mode"]
+        self.safe_mode_strict = profile_defaults["safe_mode_strict"]
+        self.dry_run = profile_defaults["dry_run"]
+        self.explain_only = profile_defaults["explain_only"]
+        self._sync_openai_session_context()
+        self.interaction_logger.log_event("profile_changed", {"profile": normalized_profile})
+        print(colored(f"Profile set to: {normalized_profile}", "green"))
+        return True
+
+    def _emit_json(self, payload):
+        print(json.dumps(payload, ensure_ascii=False))
+
+    def _build_json_payload(self, prompt, commands_payload=None, error=None):
+        commands_payload = commands_payload or {}
+        return {
+            "ok": error is None,
+            "session_id": getattr(self.interaction_logger, "session_id", None),
+            "profile": getattr(self, "profile", "safe-edit"),
+            "dry_run": getattr(self, "dry_run", False),
+            "explain_only": getattr(self, "explain_only", False),
+            "prompt": prompt,
+            "response": commands_payload.get("response"),
+            "commands": commands_payload.get("commands") or [],
+            "usage": self.openai_helper.get_session_usage_summary(),
+            "error": error,
+        }
+
+    def _log_session_started(self):
+        self.interaction_logger.log_event(
+            "session_started",
+            {
+                "shell_name": self.openai_helper.shell_name,
+                "os_name": self.openai_helper.os_name,
+                "model_name": getattr(self.openai_helper, "model_name", "unknown"),
+                "chat_language": getattr(self.openai_helper, "chat_language", "english"),
+                "profile": getattr(self, "profile", "safe-edit"),
+                "dry_run": getattr(self, "dry_run", False),
+                "explain_only": getattr(self, "explain_only", False),
+                "json_mode": getattr(self, "json_mode", False),
+            },
+        )
 
     def _finalize_session_report(self):
         if not getattr(self, "session_report_file", None):
@@ -303,6 +361,15 @@ class Application:
             self._set_show_tokens(False)
             return True
 
+        if normalized in {"profile", "/profile"}:
+            print(colored(f"Current profile: {getattr(self, 'profile', 'safe-edit')}", "green"))
+            return True
+
+        if normalized.startswith("profile ") or normalized.startswith("/profile "):
+            profile_name = normalized.split(" ", 1)[1].strip()
+            self._set_profile(profile_name)
+            return True
+
         return False
 
     def interpret_and_execute_command(self, user_prompt):
@@ -372,6 +439,35 @@ class Application:
             print(colored("No commands proposed.", "yellow"))
         else:
             print(colored("No commands found", "red"))
+
+    def run_json(self, initial_prompt=None):
+        self._log_session_started()
+        try:
+            if not isinstance(initial_prompt, str) or initial_prompt.strip() == "":
+                payload = self._build_json_payload(
+                    prompt=initial_prompt,
+                    error="JSON mode requires an initial prompt or piped input.",
+                )
+                self._emit_json(payload)
+                return
+
+            self.interaction_logger.log("user", initial_prompt)
+            self._sync_openai_session_context()
+            commands_payload = self.openai_helper.get_commands(initial_prompt)
+            self.interaction_logger.log_event("auto_mode_commands_payload", commands_payload)
+            if commands_payload and commands_payload.get("response"):
+                self.interaction_logger.log("assistant", commands_payload["response"])
+
+            if commands_payload is None:
+                payload = self._build_json_payload(
+                    prompt=initial_prompt,
+                    error="Failed to generate commands from the assistant.",
+                )
+            else:
+                payload = self._build_json_payload(prompt=initial_prompt, commands_payload=commands_payload)
+            self._emit_json(payload)
+        finally:
+            self._finalize_session_report()
 
     def execute_commands(self, commands):
         """Executes the commands."""
@@ -555,17 +651,7 @@ class Application:
         model_name = getattr(self.openai_helper, "model_name", "unknown")
         chat_language = getattr(self.openai_helper, "chat_language", "english")
         has_initial_prompt = isinstance(initial_prompt, str) and initial_prompt.strip() != ""
-        self.interaction_logger.log_event(
-            "session_started",
-            {
-                "shell_name": shell_name,
-                "os_name": os_name,
-                "model_name": model_name,
-                "chat_language": chat_language,
-                "dry_run": getattr(self, "dry_run", False),
-                "explain_only": getattr(self, "explain_only", False),
-            },
-        )
+        self._log_session_started()
         try:
             print(
                 colored(
@@ -581,6 +667,7 @@ class Application:
                 )
             )
             print(colored(f"Token usage display: {self._show_tokens_status_text()}", "green" if self.show_tokens else "yellow"))
+            print(colored(f"Profile: {getattr(self, 'profile', 'safe-edit')}", "green"))
             dry_run_enabled = getattr(self, "dry_run", False)
             explain_only_enabled = getattr(self, "explain_only", False)
             print(colored(f"Dry run: {'ON' if dry_run_enabled else 'OFF'}", "yellow" if dry_run_enabled else "green"))
@@ -590,6 +677,7 @@ class Application:
                     "yellow" if explain_only_enabled else "green",
                 )
             )
+            print(colored(f"JSON mode: {'ON' if getattr(self, 'json_mode', False) else 'OFF'}", "yellow" if getattr(self, 'json_mode', False) else "green"))
             if getattr(self, "session_report_file", None):
                 print(colored(f"Session report: {self.session_report_file}", "cyan"))
             if not has_initial_prompt:

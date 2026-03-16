@@ -4,6 +4,8 @@ import types
 import unittest
 from unittest import mock
 
+from openai import RateLimitError
+
 from prompt2shell.openai_helper import OpenAIHelper
 
 
@@ -206,6 +208,60 @@ class OpenAIHelperTests(unittest.TestCase):
         self.assertIsNone(next_commands)
         self.assertEqual(fake_api.calls[0]["tool_choice"], "none")
         self.assertIn("Do not propose or return any new commands.", fake_api.calls[0]["input"])
+
+    def test_create_response_retries_rate_limit_errors(self):
+        final_response = types.SimpleNamespace(
+            id="resp_1",
+            usage=types.SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2),
+            output=[
+                types.SimpleNamespace(
+                    type="function_call",
+                    name="get_commands",
+                    arguments=json.dumps({"commands": [], "response": "done"}),
+                    call_id="call_1",
+                    id="item_1",
+                )
+            ],
+            output_text=None,
+        )
+        follow_up_response = types.SimpleNamespace(
+            id="resp_2",
+            usage=types.SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2),
+            output=[],
+            output_text="Done",
+        )
+
+        response_stub = mock.Mock()
+        response_stub.request = mock.Mock()
+        response_stub.status_code = 429
+        rate_limit_error = RateLimitError("slow down", response=response_stub, body=None)
+
+        class FakeResponsesAPI:
+            def __init__(self):
+                self.calls = []
+                self.attempts = 0
+
+            def create(self, **kwargs):
+                self.calls.append(kwargs)
+                self.attempts += 1
+                if self.attempts == 1:
+                    raise rate_limit_error
+                if self.attempts == 2:
+                    return final_response
+                return follow_up_response
+
+        fake_api = FakeResponsesAPI()
+        fake_client = types.SimpleNamespace(responses=fake_api)
+
+        with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
+            with mock.patch("prompt2shell.openai_helper.OpenAI", return_value=fake_client):
+                with mock.patch("prompt2shell.openai_helper.time.sleep") as sleep_mock:
+                    helper = OpenAIHelper(model_name="gpt-test", max_output_tokens=200, max_retries=2, retry_base_seconds=0.1)
+                    payload = helper.get_commands("show files")
+
+        self.assertEqual(payload["response"], "done")
+        sleep_mock.assert_called_once()
+        self.assertEqual(fake_api.attempts, 3)
 
 
 if __name__ == "__main__":

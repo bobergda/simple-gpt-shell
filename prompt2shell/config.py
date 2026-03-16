@@ -11,12 +11,38 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for Python < 3.11
 
 
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "prompt2shell" / "config.toml"
+VALID_PROFILES = {"inspect", "safe-edit", "full"}
+
+
+PROFILE_DEFAULTS = {
+    "inspect": {
+        "safe_mode": True,
+        "safe_mode_strict": True,
+        "dry_run": True,
+        "explain_only": False,
+    },
+    "safe-edit": {
+        "safe_mode": True,
+        "safe_mode_strict": False,
+        "dry_run": False,
+        "explain_only": False,
+    },
+    "full": {
+        "safe_mode": False,
+        "safe_mode_strict": False,
+        "dry_run": False,
+        "explain_only": False,
+    },
+}
 
 
 @dataclass(frozen=True)
 class AppConfig:
+    profile: str = "safe-edit"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+    api_max_retries: int = 2
+    api_retry_base_seconds: float = 1.0
     max_output_tokens: int = 1200
     log_enabled: bool = False
     log_file: str | None = None
@@ -28,6 +54,7 @@ class AppConfig:
     once_mode: bool = False
     dry_run: bool = False
     explain_only: bool = False
+    json_mode: bool = False
     session_report_file: str | None = None
     config_file: str | None = None
 
@@ -64,6 +91,16 @@ def _coerce_positive_int(value, default):
     return parsed if parsed > 0 else default
 
 
+def _coerce_positive_float(value, default):
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
 def _coerce_timeout(value, default):
     if value is None:
         return default
@@ -82,6 +119,13 @@ def _normalize_chat_language(value, default="english"):
     return "english"
 
 
+def _normalize_profile(value, default="safe-edit"):
+    normalized = str(value or default).strip().lower()
+    if normalized in VALID_PROFILES:
+        return normalized
+    return default
+
+
 def _expand_path(value, base_dir=None):
     if value in {None, ""}:
         return None
@@ -96,6 +140,12 @@ def _pick_first(*values):
         if value not in {None, ""}:
             return value
     return None
+
+
+def _env_bool(key):
+    if key not in os.environ:
+        return None
+    return env_flag(key, False)
 
 
 def _read_toml_config(path):
@@ -132,8 +182,11 @@ def load_app_config(cli_overrides=None):
     defaults = AppConfig(config_file=resolved_config_path)
 
     file_values = {
+        "profile": _get_nested(raw_config, "app", "profile"),
         "openai_api_key": _get_nested(raw_config, "openai", "api_key"),
         "openai_model": _get_nested(raw_config, "openai", "model"),
+        "api_max_retries": _get_nested(raw_config, "openai", "max_retries"),
+        "api_retry_base_seconds": _get_nested(raw_config, "openai", "retry_base_seconds"),
         "max_output_tokens": _get_nested(raw_config, "app", "max_output_tokens"),
         "log_enabled": _get_nested(raw_config, "logging", "enabled"),
         "log_file": _expand_path(_get_nested(raw_config, "logging", "file"), base_dir=config_base_dir),
@@ -145,49 +198,63 @@ def load_app_config(cli_overrides=None):
         "once_mode": _get_nested(raw_config, "app", "once_mode"),
         "dry_run": _get_nested(raw_config, "app", "dry_run"),
         "explain_only": _get_nested(raw_config, "app", "explain_only"),
+        "json_mode": _get_nested(raw_config, "app", "json_mode"),
         "session_report_file": _expand_path(_get_nested(raw_config, "report", "file"), base_dir=config_base_dir),
     }
 
     env_values = {
+        "profile": os.getenv("PROMPT2SHELL_PROFILE"),
         "openai_api_key": os.getenv("OPENAI_API_KEY"),
         "openai_model": os.getenv("OPENAI_MODEL"),
+        "api_max_retries": os.getenv("PROMPT2SHELL_OPENAI_MAX_RETRIES"),
+        "api_retry_base_seconds": os.getenv("PROMPT2SHELL_OPENAI_RETRY_BASE_SECONDS"),
         "max_output_tokens": os.getenv("PROMPT2SHELL_MAX_OUTPUT_TOKENS"),
-        "log_enabled": env_flag("PROMPT2SHELL_LOG_ENABLED", file_values["log_enabled"] if file_values["log_enabled"] is not None else defaults.log_enabled),
+        "log_enabled": _env_bool("PROMPT2SHELL_LOG_ENABLED"),
         "log_file": _expand_path(os.getenv("PROMPT2SHELL_LOG_FILE")),
-        "safe_mode": env_flag("PROMPT2SHELL_SAFE_MODE", file_values["safe_mode"] if file_values["safe_mode"] is not None else defaults.safe_mode),
-        "safe_mode_strict": env_flag(
-            "PROMPT2SHELL_SAFE_MODE_STRICT",
-            file_values["safe_mode_strict"] if file_values["safe_mode_strict"] is not None else defaults.safe_mode_strict,
-        ),
-        "show_tokens": env_flag(
-            "PROMPT2SHELL_SHOW_TOKENS",
-            file_values["show_tokens"] if file_values["show_tokens"] is not None else defaults.show_tokens,
-        ),
+        "safe_mode": _env_bool("PROMPT2SHELL_SAFE_MODE"),
+        "safe_mode_strict": _env_bool("PROMPT2SHELL_SAFE_MODE_STRICT"),
+        "show_tokens": _env_bool("PROMPT2SHELL_SHOW_TOKENS"),
         "command_timeout": os.getenv("PROMPT2SHELL_COMMAND_TIMEOUT"),
         "chat_language": os.getenv("PROMPT2SHELL_CHAT_LANGUAGE"),
-        "once_mode": env_flag("PROMPT2SHELL_ONCE", file_values["once_mode"] if file_values["once_mode"] is not None else defaults.once_mode),
-        "dry_run": env_flag("PROMPT2SHELL_DRY_RUN", file_values["dry_run"] if file_values["dry_run"] is not None else defaults.dry_run),
-        "explain_only": env_flag(
-            "PROMPT2SHELL_EXPLAIN_ONLY",
-            file_values["explain_only"] if file_values["explain_only"] is not None else defaults.explain_only,
-        ),
+        "once_mode": _env_bool("PROMPT2SHELL_ONCE"),
+        "dry_run": _env_bool("PROMPT2SHELL_DRY_RUN"),
+        "explain_only": _env_bool("PROMPT2SHELL_EXPLAIN_ONLY"),
+        "json_mode": _env_bool("PROMPT2SHELL_JSON"),
         "session_report_file": _expand_path(os.getenv("PROMPT2SHELL_SESSION_REPORT_FILE")),
     }
 
+    profile = _normalize_profile(
+        _pick_first(cli_overrides.get("profile"), env_values["profile"], file_values["profile"], defaults.profile),
+        defaults.profile,
+    )
+    profile_defaults = PROFILE_DEFAULTS[profile]
+
     merged = replace(
         defaults,
+        profile=profile,
         openai_api_key=str(_pick_first(cli_overrides.get("openai_api_key"), env_values["openai_api_key"], file_values["openai_api_key"], defaults.openai_api_key) or ""),
         openai_model=str(_pick_first(cli_overrides.get("openai_model"), env_values["openai_model"], file_values["openai_model"], defaults.openai_model) or defaults.openai_model),
+        api_max_retries=_coerce_positive_int(
+            _pick_first(cli_overrides.get("api_max_retries"), env_values["api_max_retries"], file_values["api_max_retries"]),
+            defaults.api_max_retries,
+        ),
+        api_retry_base_seconds=_coerce_positive_float(
+            _pick_first(cli_overrides.get("api_retry_base_seconds"), env_values["api_retry_base_seconds"], file_values["api_retry_base_seconds"]),
+            defaults.api_retry_base_seconds,
+        ),
         max_output_tokens=_coerce_positive_int(
             _pick_first(cli_overrides.get("max_output_tokens"), env_values["max_output_tokens"], file_values["max_output_tokens"]),
             defaults.max_output_tokens,
         ),
         log_enabled=_coerce_bool(_pick_first(cli_overrides.get("log_enabled"), env_values["log_enabled"]), _coerce_bool(file_values["log_enabled"], defaults.log_enabled)),
         log_file=_pick_first(cli_overrides.get("log_file"), env_values["log_file"], file_values["log_file"], defaults.log_file),
-        safe_mode=_coerce_bool(_pick_first(cli_overrides.get("safe_mode"), env_values["safe_mode"]), _coerce_bool(file_values["safe_mode"], defaults.safe_mode)),
+        safe_mode=_coerce_bool(
+            _pick_first(cli_overrides.get("safe_mode"), env_values["safe_mode"], file_values["safe_mode"]),
+            profile_defaults["safe_mode"],
+        ),
         safe_mode_strict=_coerce_bool(
-            _pick_first(cli_overrides.get("safe_mode_strict"), env_values["safe_mode_strict"]),
-            _coerce_bool(file_values["safe_mode_strict"], defaults.safe_mode_strict),
+            _pick_first(cli_overrides.get("safe_mode_strict"), env_values["safe_mode_strict"], file_values["safe_mode_strict"]),
+            profile_defaults["safe_mode_strict"],
         ),
         show_tokens=_coerce_bool(
             _pick_first(cli_overrides.get("show_tokens"), env_values["show_tokens"]),
@@ -201,10 +268,17 @@ def load_app_config(cli_overrides=None):
             _pick_first(cli_overrides.get("chat_language"), env_values["chat_language"], file_values["chat_language"], defaults.chat_language)
         ),
         once_mode=_coerce_bool(_pick_first(cli_overrides.get("once_mode"), env_values["once_mode"]), _coerce_bool(file_values["once_mode"], defaults.once_mode)),
-        dry_run=_coerce_bool(_pick_first(cli_overrides.get("dry_run"), env_values["dry_run"]), _coerce_bool(file_values["dry_run"], defaults.dry_run)),
+        dry_run=_coerce_bool(
+            _pick_first(cli_overrides.get("dry_run"), env_values["dry_run"], file_values["dry_run"]),
+            profile_defaults["dry_run"],
+        ),
         explain_only=_coerce_bool(
-            _pick_first(cli_overrides.get("explain_only"), env_values["explain_only"]),
-            _coerce_bool(file_values["explain_only"], defaults.explain_only),
+            _pick_first(cli_overrides.get("explain_only"), env_values["explain_only"], file_values["explain_only"]),
+            profile_defaults["explain_only"],
+        ),
+        json_mode=_coerce_bool(
+            _pick_first(cli_overrides.get("json_mode"), env_values["json_mode"], file_values["json_mode"]),
+            defaults.json_mode,
         ),
         session_report_file=_pick_first(
             cli_overrides.get("session_report_file"),
@@ -216,5 +290,7 @@ def load_app_config(cli_overrides=None):
 
     if merged.explain_only and not merged.dry_run:
         merged = replace(merged, dry_run=True)
+    if merged.json_mode:
+        merged = replace(merged, once_mode=True, dry_run=True, show_tokens=False)
 
     return merged
